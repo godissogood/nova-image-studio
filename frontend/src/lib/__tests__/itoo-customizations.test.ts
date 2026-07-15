@@ -14,6 +14,7 @@ import {
   saveRegistry,
   type NovaModelRegistry,
 } from '@/lib/nova-models';
+import { normalizeModel, resolveAgentModel } from '@/lib/model-capabilities';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const serverSource = fs.readFileSync(path.resolve(testDir, '../../../../backend/server.js'), 'utf8');
@@ -70,6 +71,37 @@ describe('itoo model defaults', () => {
     const persisted = JSON.parse(localStorage.getItem('nova-model-registry') || '{}') as NovaModelRegistry;
     expect(persisted.imageModels[0]?.baseUrl).toBe(ITOO_API_BASE_URL);
     expect(persisted.textModels[0]?.baseUrl).toBe(ITOO_API_BASE_URL);
+  });
+
+  it('uses configured defaults per image task and rejects stale cached models', () => {
+    const registry: NovaModelRegistry = {
+      ...tamperedRegistry,
+      imageModels: [
+        tamperedRegistry.imageModels[0],
+        { ...tamperedRegistry.imageModels[0], id: 'image-2', name: 'Image Edit' },
+      ],
+      defaults: {
+        ...tamperedRegistry.defaults,
+        textToImage: 'image-1',
+        imageToImage: 'image-2',
+      },
+    };
+    saveRegistry(registry);
+
+    expect(normalizeModel(undefined, 'textToImage')).toBe('image-1');
+    expect(normalizeModel(undefined, 'imageToImage')).toBe('image-2');
+    expect(normalizeModel('gemini-3-pro-image-preview', 'textToImage')).toBe('image-1');
+  });
+
+  it('does not retain an unavailable Agent image model', () => {
+    expect(resolveAgentModel('gemini-3-pro-image-preview', undefined, undefined, [
+      { id: 'configured-image', name: 'Configured Image', maxOutputSize: '4K' },
+    ])).toBe('configured-image');
+  });
+
+  it('has no image-model fallback when no image model is configured', () => {
+    expect(normalizeModel(undefined, 'textToImage')).toBe('');
+    expect(resolveAgentModel('gemini-3-pro-image-preview', undefined, undefined, [])).toBe('');
   });
 });
 

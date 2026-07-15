@@ -12,6 +12,8 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - ../../data:/app/backend/data
+    networks:
+      - itoo-internal
     restart: unless-stopped
     healthcheck:
       test:
@@ -23,3 +25,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+networks:
+  itoo-internal:
+    name: itoo-internal
+    external: true

@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { TextToImageForm } from '../TextToImageForm'
 
 function configureGptImageModel() {
@@ -31,6 +31,7 @@ function configureGptImageModel() {
 describe('TextToImageForm', () => {
   beforeEach(() => {
     localStorage.clear()
+    configureGptImageModel()
   })
 
   it('renders the form with placeholder text', () => {
@@ -72,7 +73,7 @@ describe('TextToImageForm', () => {
       outputSize: '1K',
       aspectRatio: '1:1',
       temperature: 1,
-      model: 'gemini-3-pro-image-preview',
+      model: 'gpt-image-2',
       gptImageQuality: 'auto',
       gptImageStyle: 'auto',
       gptImageBackground: 'auto',
@@ -81,7 +82,6 @@ describe('TextToImageForm', () => {
   })
 
   it('shows image params control for GPT Image 2 model', async () => {
-    configureGptImageModel()
     const onSubmit = vi.fn()
     render(<TextToImageForm onSubmit={onSubmit} initialData={{ model: 'gpt-image-2' }} />)
 
@@ -89,7 +89,6 @@ describe('TextToImageForm', () => {
   })
 
   it('submits default image params for GPT Image 2 model when left on auto', async () => {
-    configureGptImageModel()
     const onSubmit = vi.fn()
     render(
       <TextToImageForm
@@ -119,6 +118,22 @@ describe('TextToImageForm', () => {
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
 
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('replaces a stale saved model after the registry is updated', async () => {
+    localStorage.setItem('nova-t2i-settings', JSON.stringify({ model: 'deleted-model' }))
+    const onSubmit = vi.fn()
+    render(<TextToImageForm onSubmit={onSubmit} />)
+
+    await act(async () => {
+      window.dispatchEvent(new Event('nova-model-registry-updated'))
+    })
+
+    const textarea = screen.getByPlaceholderText('描述你想要生成的图像...')
+    fireEvent.change(textarea, { target: { value: 'A configured model test' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-image-2' }))
   })
 
   it('shows configuration prompt when disabled prop is true', () => {

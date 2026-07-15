@@ -41,6 +41,7 @@ import { handleMarkdownCodeCopyButtonClick } from '@/lib/markdown-code-copy';
 import { generateUUID } from '@/lib/uuid';
 import { prepareUploadImage, getOptimizationBadge } from '@/lib/upload-image-cache';
 import { useAgentChat, type PendingUpload, type AgentPhase } from '@/hooks/useAgentChat';
+import { useModelRegistryRevision } from '@/hooks/useModelRegistryRevision';
 import { MODEL_OPTIONS, type ModelId } from '@/lib/gemini-config';
 import { addTextAsset, getAssetBlob, type ImageAsset, type TextAsset } from '@/lib/asset-store';
 import type { OutputSize, AspectRatio } from '@/lib/job-store';
@@ -180,6 +181,7 @@ export function AgentChatWorkspace({ wideMode = false, disabled = false, onConfi
   );
   const [userCustomSize, setUserCustomSize] = useState<string | undefined>(initialUserCustomSize);
   const [customSizeDialogOpen, setCustomSizeDialogOpen] = useState(false);
+  const modelRegistryRevision = useModelRegistryRevision();
 
   const supportsTemperature = getSupportsTemperature(userModel);
   const supportsAdvancedParams = supportsGptImageAdvancedParams(userModel);
@@ -222,6 +224,16 @@ export function AgentChatWorkspace({ wideMode = false, disabled = false, onConfi
     setUserCustomSize(nextCustomSize);
     setUserAdvancedParams(prev => getGptImageAdvancedParamsForModel(nextModel, prev));
   }, [userAspectRatio, userCustomSize, userOutputSize]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const configuredModel = normalizeModel(userModel, 'textToImage');
+      if (configuredModel !== userModel) applyUserModel(configuredModel);
+    });
+    return () => { cancelled = true; };
+  }, [applyUserModel, modelRegistryRevision, userModel]);
 
   const imageMap = useMemo(() => new Map(agent.images.map(img => [img.imgId, img])), [agent.images]);
 

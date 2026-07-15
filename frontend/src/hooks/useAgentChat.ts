@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApiKeyStatus } from '@/hooks/useApiKeyStatus';
+import { useModelRegistryRevision } from '@/hooks/useModelRegistryRevision';
 import { generateUUID } from '@/lib/uuid';
 import { createNovaTask, getNovaTask, resolveImageTaskProvider, type ImageReference } from '@/lib/ccode-task-client';
 import { fetchImageAsBlob } from '@/lib/image-downloader';
 import {
   getGptImageAdvancedParamsForModel,
+  normalizeModel,
   resolveAgentModel,
   type AgentModelCatalogEntry,
   type AgentResolvedLayout,
@@ -19,7 +21,6 @@ import {
   type StreamAgentHandle,
 } from '@/lib/agent-chat-client';
 import {
-  AGENT_DEFAULT_IMAGE_MODEL_FALLBACK,
   type AgentMessage,
   type AgentImageRecord,
   type AgentProposal,
@@ -182,7 +183,8 @@ export function useAgentChat() {
   const [proposal, setProposal] = useState<AgentProposal | null>(null);
   const [streamingText, setStreamingText] = useState('');
   const [streamingReasoning, setStreamingReasoning] = useState('');
-  const [imageModel, setImageModelState] = useState<ModelId>(AGENT_DEFAULT_IMAGE_MODEL_FALLBACK);
+  const [imageModel, setImageModelState] = useState<ModelId>('');
+  const modelRegistryRevision = useModelRegistryRevision();
   const [error, setError] = useState<string | null>(null);
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [generatingStartedAt, setGeneratingStartedAt] = useState<number | null>(null);
@@ -278,7 +280,10 @@ export function useAgentChat() {
       setMessages(session.messages);
       setImages(session.images);
       seqRef.current = session.images.reduce((max, img) => Math.max(max, parseImgSeq(img.imgId)), 0);
-      if (session.imageModel) setImageModelState(session.imageModel as ModelId);
+      const restoredImageModel = normalizeModel(session.imageModel || undefined, 'textToImage');
+      imageModelRef.current = restoredImageModel;
+      setImageModelState(restoredImageModel);
+      if (restoredImageModel !== session.imageModel) void saveImageModel(restoredImageModel);
 
       if (pending) {
         // 恢复待确认的提案，使用户刷新后仍可看到「等待你确认」卡片
@@ -314,6 +319,15 @@ export function useAgentChat() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const configuredModel = normalizeModel(imageModelRef.current, 'textToImage');
+    if (configuredModel === imageModelRef.current) return;
+    imageModelRef.current = configuredModel;
+    setImageModelState(configuredModel);
+    void saveImageModel(configuredModel);
+  }, [modelRegistryRevision, ready]);
 
   const appendMessage = useCallback((message: AgentMessage) => {
     setMessages(prev => [...prev, message]);
@@ -440,8 +454,9 @@ export function useAgentChat() {
           const reasoning = reasoningBuf.trim();
           if (parsedProposal) {
             // 模型自动选择：Agent 指定模型 id 或用户要求分辨率档位时自动切换
+            const configuredModel = normalizeModel(imageModelRef.current, 'textToImage');
             const resolvedModel = resolveAgentModel(
-              imageModelRef.current,
+              configuredModel,
               parsedProposal.requestedModelId,
               parsedProposal.requestedOutputSize,
               modelCatalog,
@@ -835,7 +850,14 @@ export function useAgentChat() {
         if (bytes) references.push({ data: bytes.data, mimeType: bytes.mimeType });
       }
       const mode = references.length > 0 ? 'image-to-image' : 'text-to-image';
-      const provider = resolveImageTaskProvider(model);
+      const configuredModel = normalizeModel(model, mode === 'image-to-image' ? 'imageToImage' : 'textToImage');
+      if (!configuredModel) throw new Error('请先配置可用的图片模型');
+      if (configuredModel !== imageModelRef.current) {
+        imageModelRef.current = configuredModel;
+        setImageModelState(configuredModel);
+        void saveImageModel(configuredModel);
+      }
+      const provider = resolveImageTaskProvider(configuredModel);
 
       const taskId = await createNovaTask({
         apiKey: provider.apiKey,
@@ -862,7 +884,7 @@ export function useAgentChat() {
         pendingAnalysis: pendingAnalysisRef.current,
         pendingReasoning: pendingReasoningRef.current,
         selectedImageIds,
-        model,
+        model: configuredModel,
         outputSize: params.outputSize,
         customSize: params.customSize,
         aspectRatio: params.aspectRatio,
@@ -887,7 +909,7 @@ export function useAgentChat() {
           action: selectedImageIds.length > 0 ? 'edit' : 'generate',
           prompt,
           referencedImageIds: selectedImageIds,
-          model,
+          model: configuredModel,
           outputSize: params.outputSize,
           customSize: params.customSize,
           aspectRatio: params.aspectRatio,
@@ -948,8 +970,11 @@ export function useAgentChat() {
   }, []);
 
   const setImageModel = useCallback((model: ModelId) => {
-    setImageModelState(model);
-    void saveImageModel(model);
+    const configuredModel = normalizeModel(model, 'textToImage');
+    if (!configuredModel) return;
+    imageModelRef.current = configuredModel;
+    setImageModelState(configuredModel);
+    void saveImageModel(configuredModel);
   }, []);
 
   const toggleWebSearch = useCallback(() => {

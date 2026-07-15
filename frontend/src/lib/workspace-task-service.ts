@@ -9,6 +9,7 @@ import type { ModelId } from '@/lib/gemini-config';
 import type { AspectRatio, OutputSize, StoredJob } from '@/lib/job-store';
 import {
   getGptImageAdvancedParamsForModel,
+  normalizeModel,
   type GptImageBackground,
   type GptImageQuality,
   type GptImageStyle,
@@ -316,7 +317,12 @@ export async function submitTextToImage(
   actions: SubmitActions,
   onError: (message: string) => void
 ): Promise<void> {
-  const provider = resolveImageTaskProvider(input.model);
+  const model = normalizeModel(input.model, 'textToImage');
+  if (!model) {
+    onError('请先配置可用的图片模型');
+    return;
+  }
+  const provider = resolveImageTaskProvider(model);
   const apiKey = provider.apiKey;
 
   if (!apiKey) {
@@ -332,7 +338,7 @@ export async function submitTextToImage(
       input.customSize,
       input.aspectRatio,
       input.temperature,
-      input.model,
+      model,
       input.gptImageQuality,
       input.gptImageStyle,
       input.gptImageBackground,
@@ -375,7 +381,12 @@ export async function submitImageToImage(
   actions: SubmitActions,
   onError: (message: string) => void
 ): Promise<void> {
-  const provider = resolveImageTaskProvider(input.model);
+  const model = normalizeModel(input.model, 'imageToImage');
+  if (!model) {
+    onError('请先配置可用的图片模型');
+    return;
+  }
+  const provider = resolveImageTaskProvider(model);
   const apiKey = provider.apiKey;
 
   if (!apiKey) {
@@ -397,7 +408,7 @@ export async function submitImageToImage(
     input.customSize,
     input.aspectRatio,
     input.temperature,
-    input.model,
+    model,
     input.gptImageQuality,
     input.gptImageStyle,
     input.gptImageBackground,

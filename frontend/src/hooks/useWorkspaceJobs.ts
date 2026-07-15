@@ -10,8 +10,7 @@ import {
   type Mode,
   type StoredJob,
 } from '@/lib/job-store';
-import type { ModelId } from '@/lib/gemini-config';
-import { getCompatibleRetryData, type RetryData } from '@/lib/model-capabilities';
+import { getCompatibleRetryData, normalizeModel, type RetryData } from '@/lib/model-capabilities';
 import { classifyFailureFromMessage } from '@/lib/task-failure';
 import { deleteStoredBlobs, revokeBlobUrls } from '@/lib/image-downloader';
 import { retryDownloadCachedImages } from '@/lib/workspace-task-service';
@@ -24,7 +23,7 @@ function loadInitialJobs(): StoredJob[] {
   return loadJobs().map(job => ({
     ...job,
     ...(isWaitingJob(job) && !job.serverTaskId ? { status: 'failed' as const, error: '页面刷新，任务已中断', terminal: true } : {}),
-    ...(!job.model ? { model: 'gemini-3-pro-image-preview' as ModelId } : {}),
+    model: normalizeModel(job.model, job.mode === 'image-to-image' ? 'imageToImage' : 'textToImage'),
   }));
 }
 

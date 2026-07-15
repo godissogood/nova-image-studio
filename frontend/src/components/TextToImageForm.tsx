@@ -19,6 +19,7 @@ import { streamPromptOptimize, type StreamPromptOptimizeHandle } from '@/lib/pro
 import { loadJsonFromStorage, saveJsonToStorage } from '@/lib/settings-storage';
 import { requireDefaultConfiguredTextModel } from '@/lib/model-endpoints';
 import { type ModelId } from '@/lib/gemini-config';
+import { useModelRegistryRevision } from '@/hooks/useModelRegistryRevision';
 import {
   getAspectRatioOptions,
   getCustomSizeMaxSide,
@@ -72,7 +73,7 @@ export function TextToImageForm({ onSubmit, disabled = false, onDraftConsumed, o
 
   const disabledMessage = '请先在设置中配置 Nova API 密钥，配置完成后即可开始生成图片。';
 
-  const [model, setModel] = useState<ModelId>('gemini-3-pro-image-preview');
+  const [model, setModel] = useState<ModelId>('');
   const [outputSize, setOutputSize] = useState<OutputSize>('1K');
   const [customSize, setCustomSize] = useState<string | undefined>(undefined);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1');
@@ -80,6 +81,7 @@ export function TextToImageForm({ onSubmit, disabled = false, onDraftConsumed, o
   const [gptImageAdvancedParams, setGptImageAdvancedParams] = useState<GptImageAdvancedParams>(DEFAULT_GPT_IMAGE_ADVANCED_PARAMS);
   const [parallelCount, setParallelCount] = useState<ParallelCount>(1);
   const [settingsReady, setSettingsReady] = useState(false);
+  const modelRegistryRevision = useModelRegistryRevision();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // 弹窗开关状态
@@ -165,7 +167,7 @@ export function TextToImageForm({ onSubmit, disabled = false, onDraftConsumed, o
     const useInitial = initialData ? true : false;
     const saved = loadJsonFromStorage<T2ISettings>(T2I_SETTINGS_KEY);
 
-    const nextModel = normalizeModel(useInitial && initialData?.model ? initialData.model : saved.model);
+    const nextModel = normalizeModel(useInitial && initialData?.model ? initialData.model : saved.model, 'textToImage');
     const validSizes = getValidOutputSizes(nextModel);
     const nextOutputSize: OutputSize = useInitial && initialData?.outputSize && validSizes.includes(initialData.outputSize)
       ? initialData.outputSize
@@ -203,7 +205,7 @@ export function TextToImageForm({ onSubmit, disabled = false, onDraftConsumed, o
 
       setSettingsReady(true);
     });
-  }, [initialData]);
+  }, [initialData, modelRegistryRevision]);
 
   // 保存设置到缓存
   useEffect(() => {
@@ -226,6 +228,11 @@ export function TextToImageForm({ onSubmit, disabled = false, onDraftConsumed, o
   };
 
   const handleSubmit = () => {
+    const submittedModel = normalizeModel(model, 'textToImage');
+    if (!submittedModel) {
+      setMissingApiKeyDialogOpen(true);
+      return;
+    }
     const finalQueue = prompt.trim()
       ? [...queue, { id: generateUUID(), prompt: prompt.trim() }]
       : queue;
@@ -237,7 +244,7 @@ export function TextToImageForm({ onSubmit, disabled = false, onDraftConsumed, o
         customSize,
         aspectRatio,
         temperature,
-        model,
+        model: submittedModel,
         gptImageQuality: gptImageAdvancedParams.quality,
         gptImageStyle: gptImageAdvancedParams.style,
         gptImageBackground: gptImageAdvancedParams.background,

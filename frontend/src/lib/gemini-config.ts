@@ -10,6 +10,7 @@ import {
 export type OutputSize = 'auto' | '512' | '1K' | '2K' | '4K';
 export type AspectRatio = 'auto' | '1:1' | '1:4' | '1:8' | '2:3' | '3:2' | '3:4' | '4:1' | '4:3' | '4:5' | '5:4' | '8:1' | '9:16' | '16:9' | '21:9';
 export type ModelId = string;
+export type ImageModelTask = 'textToImage' | 'imageToImage';
 
 export interface ModelOption {
   value: string;
@@ -88,8 +89,13 @@ export function getBaseModelId(modelId: string): ModelId {
   return modelId;
 }
 
-export function getDefaultModelId(): string {
-  return loadRegistry().defaults.textToImage;
+export function getDefaultModelId(task: ImageModelTask = 'textToImage'): string {
+  const registry = loadRegistry();
+  const completeModels = getCompleteImageModels(registry);
+  const configuredDefault = registry.defaults[task];
+  return completeModels.find(model => model.id === configuredDefault)?.id
+    || completeModels[0]?.id
+    || '';
 }
 
 export function getMaxOutputSizesByModel(): Record<string, OutputSize[]> {

@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/workspace/dialogs/ConfirmDialog';
 import { streamPromptOptimize, type StreamPromptOptimizeHandle } from '@/lib/prompt-optimize-client';
 import { loadJsonFromStorage, saveJsonToStorage } from '@/lib/settings-storage';
 import { requireDefaultConfiguredTextModel } from '@/lib/model-endpoints';
+import { useModelRegistryRevision } from '@/hooks/useModelRegistryRevision';
 import { addTextAsset, getAssetBlob, type ImageAsset, type TextAsset } from '@/lib/asset-store';
 import { MODEL_IMAGE_LIMITS, MODEL_OPTIONS, type ModelId } from '@/lib/gemini-config';
 import {
@@ -113,7 +114,7 @@ export function ImageGenerationWorkbench({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
 
-  const [model, setModel] = useState<ModelId>('gemini-3-pro-image-preview');
+  const [model, setModel] = useState<ModelId>('');
   const [outputSize, setOutputSize] = useState<OutputSize>('1K');
   const [customSize, setCustomSize] = useState<string | undefined>(undefined);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1');
@@ -121,6 +122,7 @@ export function ImageGenerationWorkbench({
   const [gptImageAdvancedParams, setGptImageAdvancedParams] = useState<GptImageAdvancedParams>(DEFAULT_GPT_IMAGE_ADVANCED_PARAMS);
   const [parallelCount, setParallelCount] = useState<ParallelCount>(1);
   const [settingsReady, setSettingsReady] = useState(false);
+  const modelRegistryRevision = useModelRegistryRevision();
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -168,7 +170,8 @@ export function ImageGenerationWorkbench({
 
       const useInitial = Boolean(initialData);
       const saved = getSettingsFallback(Boolean(initialData?.refImages?.length));
-      const nextModel = normalizeModel(useInitial && initialData?.model ? initialData.model : saved.model);
+      const task = initialData?.refImages?.length ? 'imageToImage' : 'textToImage';
+      const nextModel = normalizeModel(useInitial && initialData?.model ? initialData.model : saved.model, task);
       const validSizes = getValidOutputSizes(nextModel);
       const nextOutputSize: OutputSize = useInitial && initialData?.outputSize && validSizes.includes(initialData.outputSize)
         ? initialData.outputSize
@@ -217,7 +220,7 @@ export function ImageGenerationWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [initialData]);
+  }, [initialData, modelRegistryRevision]);
 
   useEffect(() => {
     if (!settingsReady) return;
@@ -512,7 +515,12 @@ export function ImageGenerationWorkbench({
   const handleSubmit = () => {
     if (!prompt.trim() || disabled || loading) return;
 
-    const modelWithBilling = model;
+    const task = pendingFiles.length > 0 ? 'imageToImage' : 'textToImage';
+    const modelWithBilling = normalizeModel(model, task);
+    if (!modelWithBilling) {
+      setMissingApiKeyDialogOpen(true);
+      return;
+    }
     if (pendingFiles.length > 0) {
       onSubmitImage({
         prompt: prompt.trim(),

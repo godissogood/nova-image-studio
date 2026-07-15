@@ -48,6 +48,7 @@ import { prepareUploadImage, getOptimizationBadge } from '@/lib/upload-image-cac
 import { MAX_UPLOAD_SIZE_BYTES } from '@/lib/constants';
 import { dispatchImageActionToast } from '@/lib/image-actions';
 import { loadJsonFromStorage, saveJsonToStorage } from '@/lib/settings-storage';
+import { useModelRegistryRevision } from '@/hooks/useModelRegistryRevision';
 import type { RefImageData, OutputSize, AspectRatio } from '@/lib/job-store';
 import type { ImageFormSettings } from '@/lib/form-settings';
 
@@ -117,7 +118,7 @@ export function ImageToImageForm({
   const disabledMessage = '请先在设置中配置 Nova API 密钥，配置完成后即可开始转换图片。';
 
   // 先使用稳定默认值，避免 SSR/CSR 首帧不一致；挂载后再恢复缓存
-  const [model, setModel] = useState<ModelId>('gemini-3-pro-image-preview');
+  const [model, setModel] = useState<ModelId>('');
   const [outputSize, setOutputSize] = useState<OutputSize>('1K');
   const [customSize, setCustomSize] = useState<string | undefined>(undefined);
   const [temperature, setTemperature] = useState<number>(1);
@@ -125,6 +126,7 @@ export function ImageToImageForm({
   const [gptImageAdvancedParams, setGptImageAdvancedParams] = useState<GptImageAdvancedParams>(DEFAULT_GPT_IMAGE_ADVANCED_PARAMS);
   const [parallelCount, setParallelCount] = useState<ParallelCount>(1);
   const [settingsReady, setSettingsReady] = useState(false);
+  const modelRegistryRevision = useModelRegistryRevision();
 
   // 根据当前模型限制上传数量
   const modelLimit = MODEL_IMAGE_LIMITS[model] || { max: 1, description: '最多 1 张参考图片' };
@@ -268,7 +270,7 @@ export function ImageToImageForm({
 
     const saved = loadJsonFromStorage<I2ISettings>(I2I_SETTINGS_KEY);
 
-    const nextModel = normalizeModel(useInitial && initialData?.model ? initialData.model : saved.model);
+    const nextModel = normalizeModel(useInitial && initialData?.model ? initialData.model : saved.model, 'imageToImage');
     const validSizes = getValidOutputSizes(nextModel);
     const nextOutputSize: OutputSize = useInitial && initialData?.outputSize && validSizes.includes(initialData.outputSize)
       ? initialData.outputSize
@@ -321,7 +323,7 @@ export function ImageToImageForm({
     return () => {
       cancelled = true;
     };
-  }, [initialData]);
+  }, [initialData, modelRegistryRevision]);
 
   // 保存设置到缓存
   useEffect(() => {
@@ -340,6 +342,11 @@ export function ImageToImageForm({
   }, [model, outputSize, customSize, aspectRatio, temperature, gptImageAdvancedParams, parallelCount, settingsReady]);
 
   const handleSubmit = () => {
+    const submittedModel = normalizeModel(model, 'imageToImage');
+    if (!submittedModel) {
+      setMissingApiKeyDialogOpen(true);
+      return;
+    }
     if (prompt.trim() && pendingFiles.length > 0) {
       onSubmit({
         prompt: prompt.trim(),
@@ -348,7 +355,7 @@ export function ImageToImageForm({
         customSize,
         temperature,
         aspectRatio,
-        model,
+        model: submittedModel,
         gptImageQuality: gptImageAdvancedParams.quality,
         gptImageStyle: gptImageAdvancedParams.style,
         gptImageBackground: gptImageAdvancedParams.background,

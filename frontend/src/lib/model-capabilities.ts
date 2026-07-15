@@ -4,6 +4,7 @@ import {
   getModelImageLimits,
   getModelOptions,
   isGptImageModel,
+  type ImageModelTask,
   type ModelId,
 } from '@/lib/gemini-config';
 import { getImageModelById, loadRegistry } from '@/lib/nova-models';
@@ -381,8 +382,8 @@ export function getModelDisplayName(model: string): string {
   return getModelOptions().find(option => option.value === model)?.label || getModelConfig(model)?.name || model;
 }
 
-export function normalizeModel(candidate?: string): ModelId {
-  const fallback = getDefaultModelId();
+export function normalizeModel(candidate?: string, task: ImageModelTask = 'textToImage'): ModelId {
+  const fallback = getDefaultModelId(task);
   if (!candidate) return fallback;
   return getModelOptions().some(option => option.value === candidate)
     ? candidate as ModelId
@@ -426,7 +427,8 @@ export function isRetryLayoutCompatible(model: ModelId, outputSize: OutputSize, 
 }
 
 export function getCompatibleRetryData(job: StoredJob): RetryData {
-  const model = normalizeModel(job.model);
+  const task = job.mode === 'image-to-image' ? 'imageToImage' : 'textToImage';
+  const model = normalizeModel(job.model, task);
   const modelCompatible = model === job.model;
   const supportsTemperature = !isGptImageModel(model);
   const modelLimits = getModelImageLimits();
@@ -537,6 +539,9 @@ export function resolveAgentModel(
   requestedOutputSize: string | undefined,
   availableModels: AgentModelCatalogEntry[],
 ): ModelId {
+  const current = availableModels.find(m => m.id === currentModel);
+  const fallback = current?.id || availableModels[0]?.id || '';
+
   // 1) Agent 明确指定了模型 → 验证后使用
   if (requestedModelId) {
     const found = availableModels.find(m => m.id === requestedModelId);
@@ -545,10 +550,9 @@ export function resolveAgentModel(
 
   // 2) 用户要求了分辨率档位，当前模型不支持 → 自动选择支持的模型
   if (requestedOutputSize && requestedOutputSize !== 'auto' && availableModels.length > 0) {
-    const current = availableModels.find(m => m.id === currentModel);
     const currentCanSupport = current
       ? canModelSupportSize(current.maxOutputSize, requestedOutputSize)
-      : true;
+      : false;
     if (!currentCanSupport) {
       const candidates = availableModels.filter(m =>
         canModelSupportSize(m.maxOutputSize, requestedOutputSize),
@@ -564,7 +568,7 @@ export function resolveAgentModel(
   }
 
   // 3) 无需切换
-  return currentModel;
+  return fallback;
 }
 
 /**
