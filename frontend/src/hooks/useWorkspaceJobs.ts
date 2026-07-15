@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { hasAnyApiKey } from '@/lib/settings-storage';
+import { useApiKeyStatus } from '@/hooks/useApiKeyStatus';
 import {
   deleteImage,
   loadJobs,
@@ -29,7 +29,7 @@ function loadInitialJobs(): StoredJob[] {
 }
 
 export function useWorkspaceJobs() {
-  const [hasApiKey, setHasApiKey] = useState(() => hasAnyApiKey());
+  const [hasApiKey, setHasApiKey] = useApiKeyStatus();
   const [jobs, setJobs] = useState<StoredJob[]>(loadInitialJobs);
   const jobsRef = useRef(jobs);
   useEffect(() => { jobsRef.current = jobs; }, [jobs]);

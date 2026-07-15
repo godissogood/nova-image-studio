@@ -76,6 +76,29 @@ function createActions(initialJob: StoredJob): { actions: SubmitActions; getJob:
 }
 
 beforeEach(() => {
+  localStorage.setItem('nova-model-registry', JSON.stringify({
+    imageModels: [{
+      id: 'gpt-image-2',
+      protocol: 'openai',
+      name: 'GPT Image 2',
+      modelId: 'gpt-image-2',
+      apiKey: 'test-api-key',
+      baseUrl: 'https://api.itoo.me',
+      builtinPreset: 'gpt-image-2',
+      maxRefImages: 16,
+      maxOutputSize: '4K',
+      supportsAdvancedParams: true,
+    }],
+    textModels: [],
+    defaults: {
+      textToImage: 'gpt-image-2',
+      imageToImage: 'gpt-image-2',
+      reversePrompt: '',
+      agent: '',
+      promptOptimize: '',
+      imageDescribe: '',
+    },
+  }));
   mockedAckNovaTask.mockReset();
   mockedAckNovaTask.mockResolvedValue(undefined);
   mockedCreateNovaTask.mockReset();
@@ -84,8 +107,9 @@ beforeEach(() => {
   mockedResolveImageTaskProvider.mockReset();
   mockedResolveImageTaskProvider.mockReturnValue({
     apiKey: 'test-api-key',
-    baseUrl: 'https://api.openai.com',
+    baseUrl: 'https://api.itoo.me',
     protocol: 'openai',
+    modelId: 'gpt-image-2',
   });
 });
 

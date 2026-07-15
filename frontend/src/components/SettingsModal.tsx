@@ -60,6 +60,7 @@ import { checkModelsAvailability, type ModelStatus } from '@/lib/ccode-task-clie
 import { hasAnyApiKey } from '@/lib/settings-storage';
 import { BA_RANDOM_URL, BING_WALLPAPER_URL } from '@/lib/constants';
 import { PROMPT_DATA_SOURCES, getPromptSourceLabel } from '@/lib/prompt-gallery-data';
+import { DEFAULT_IMAGE_MODEL_ID, DEFAULT_TEXT_MODEL_ID } from '@/lib/itoo-config';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -81,7 +82,7 @@ function createImageModelDraft(): ImageModelConfig {
     id: generateModelId('img'),
     protocol: preset.protocol,
     name: '',
-    modelId: '',
+    modelId: DEFAULT_IMAGE_MODEL_ID,
     apiKey: '',
     baseUrl: preset.baseUrl,
     builtinPreset: preset.id,
@@ -97,7 +98,7 @@ function createTextModelDraft(): TextModelConfig {
     id: generateModelId('txt'),
     protocol: template.protocol,
     name: '',
-    modelId: '',
+    modelId: DEFAULT_TEXT_MODEL_ID,
     apiKey: '',
     baseUrl: template.baseUrl,
     note: template.note,
@@ -479,7 +480,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">Base URL</label>
-                      <Input value={selectedImageModel.baseUrl} onChange={(event) => handleUpdateImageModel(selectedImageModel.id, { baseUrl: event.target.value })} />
+                      <Input value={selectedImageModel.baseUrl} readOnly aria-readonly="true" className="cursor-default bg-muted/40" />
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">API Key</label>
@@ -591,7 +592,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">Base URL</label>
-                      <Input value={selectedTextModel.baseUrl} onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { baseUrl: event.target.value })} />
+                      <Input value={selectedTextModel.baseUrl} readOnly aria-readonly="true" className="cursor-default bg-muted/40" />
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">API Key</label>

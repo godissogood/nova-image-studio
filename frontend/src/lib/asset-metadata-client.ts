@@ -6,6 +6,7 @@ import {
   extractTextOutput,
 } from '@/lib/nova-proxy-text';
 import type { TextProviderProtocol } from '@/lib/nova-text-protocol';
+import { ITOO_API_BASE_URL } from '@/lib/itoo-config';
 
 const ASSET_METADATA_MODEL = 'gpt-5.4-mini';
 
@@ -45,7 +46,7 @@ export async function generateAssetMetadata(input: GenerateAssetMetadataInput): 
   const configured = getConfiguredTextModel(input.model || ASSET_METADATA_MODEL);
   const protocol = (configured?.protocol || 'openai-responses') as TextProviderProtocol;
   const actualModel = configured?.modelId || input.model || ASSET_METADATA_MODEL;
-  const baseUrl = configured?.baseUrl || input.baseUrl || 'https://api.openai.com';
+  const baseUrl = configured?.baseUrl || input.baseUrl || ITOO_API_BASE_URL;
 
   const prompt = [
     '请观察这张图片，为个人素材库生成一组中文元数据。',

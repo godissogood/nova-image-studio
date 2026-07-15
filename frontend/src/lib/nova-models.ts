@@ -5,6 +5,7 @@ import {
   isTextProviderProtocol,
   type TextProviderProtocol,
 } from '@/lib/nova-text-protocol';
+import { ITOO_API_BASE_URL } from '@/lib/itoo-config';
 
 export type ProviderProtocol = 'google' | 'openai';
 export type ImageOutputSize = '512' | '1K' | '2K' | '4K';
@@ -72,7 +73,7 @@ export const BUILTIN_IMAGE_PRESETS: Record<BuiltinImagePresetId, BuiltinImagePre
     protocol: 'google',
     name: 'Banana',
     modelId: 'gemini-2.5-flash-image',
-    baseUrl: 'https://generativelanguage.googleapis.com',
+    baseUrl: ITOO_API_BASE_URL,
     maxRefImages: 3,
     maxOutputSize: '1K',
     supportsAdvancedParams: false,
@@ -82,7 +83,7 @@ export const BUILTIN_IMAGE_PRESETS: Record<BuiltinImagePresetId, BuiltinImagePre
     protocol: 'google',
     name: 'Banana Pro',
     modelId: 'gemini-3-pro-image-preview',
-    baseUrl: 'https://generativelanguage.googleapis.com',
+    baseUrl: ITOO_API_BASE_URL,
     maxRefImages: 14,
     maxOutputSize: '4K',
     supportsAdvancedParams: false,
@@ -92,7 +93,7 @@ export const BUILTIN_IMAGE_PRESETS: Record<BuiltinImagePresetId, BuiltinImagePre
     protocol: 'google',
     name: 'Banana 2',
     modelId: 'gemini-3.1-flash-image-preview',
-    baseUrl: 'https://generativelanguage.googleapis.com',
+    baseUrl: ITOO_API_BASE_URL,
     maxRefImages: 14,
     maxOutputSize: '4K',
     supportsAdvancedParams: false,
@@ -102,7 +103,7 @@ export const BUILTIN_IMAGE_PRESETS: Record<BuiltinImagePresetId, BuiltinImagePre
     protocol: 'google',
     name: 'Banana 2 Lite',
     modelId: 'gemini-3.1-flash-lite-image',
-    baseUrl: 'https://generativelanguage.googleapis.com',
+    baseUrl: ITOO_API_BASE_URL,
     maxRefImages: 14,
     maxOutputSize: '1K',
     supportsAdvancedParams: false,
@@ -112,7 +113,7 @@ export const BUILTIN_IMAGE_PRESETS: Record<BuiltinImagePresetId, BuiltinImagePre
     protocol: 'openai',
     name: 'GPT Image 2',
     modelId: 'gpt-image-2',
-    baseUrl: 'https://api.openai.com',
+    baseUrl: ITOO_API_BASE_URL,
     maxRefImages: 16,
     maxOutputSize: '4K',
     supportsAdvancedParams: true,
@@ -129,28 +130,28 @@ export const DEFAULT_TEXT_MODEL_TEMPLATES = [
     protocol: 'openai-responses' as const,
     name: 'GPT 5.4 Mini',
     modelId: 'gpt-5.4-mini',
-    baseUrl: 'https://api.openai.com',
+    baseUrl: ITOO_API_BASE_URL,
     note: getTextProviderDescription('openai-responses'),
   },
   {
     protocol: 'google-gemini' as const,
     name: 'Gemini 2.5 Flash',
     modelId: 'gemini-2.5-flash',
-    baseUrl: 'https://generativelanguage.googleapis.com',
+    baseUrl: ITOO_API_BASE_URL,
     note: getTextProviderDescription('google-gemini'),
   },
   {
     protocol: 'anthropic-messages' as const,
     name: 'Claude Sonnet',
     modelId: 'claude-sonnet-4-20250514',
-    baseUrl: 'https://api.anthropic.com',
+    baseUrl: ITOO_API_BASE_URL,
     note: getTextProviderDescription('anthropic-messages'),
   },
   {
     protocol: 'openai-chat-completions' as const,
     name: 'OpenAI Compatible Chat',
     modelId: 'gpt-4o-mini',
-    baseUrl: 'https://api.openai.com',
+    baseUrl: ITOO_API_BASE_URL,
     note: getTextProviderDescription('openai-chat-completions'),
   },
 ];
@@ -202,7 +203,7 @@ function normalizeImageModelConfig(raw: Partial<ImageModelConfig>): ImageModelCo
     name: String(raw.name || '').trim(),
     modelId: String(raw.modelId || '').trim(),
     apiKey: String(raw.apiKey || '').trim(),
-    baseUrl: String(raw.baseUrl || preset.baseUrl).trim(),
+    baseUrl: ITOO_API_BASE_URL,
     builtinPreset: presetId,
     maxRefImages: Number.isFinite(raw.maxRefImages) && Number(raw.maxRefImages) > 0
       ? Math.max(1, Math.floor(Number(raw.maxRefImages)))
@@ -225,7 +226,7 @@ function normalizeTextModelConfig(raw: Partial<TextModelConfig>): TextModelConfi
     name: String(raw.name || '').trim(),
     modelId: String(raw.modelId || '').trim(),
     apiKey: String(raw.apiKey || '').trim(),
-    baseUrl: String(raw.baseUrl || template.baseUrl).trim(),
+    baseUrl: ITOO_API_BASE_URL,
     note: typeof raw.note === 'string' ? raw.note : (template.note || getTextProviderDescription(protocol)),
   };
 }

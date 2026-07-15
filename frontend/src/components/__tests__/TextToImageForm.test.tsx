@@ -2,6 +2,32 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TextToImageForm } from '../TextToImageForm'
 
+function configureGptImageModel() {
+  localStorage.setItem('nova-model-registry', JSON.stringify({
+    imageModels: [{
+      id: 'gpt-image-2',
+      protocol: 'openai',
+      name: 'GPT Image 2',
+      modelId: 'gpt-image-2',
+      apiKey: 'test-key',
+      baseUrl: 'https://api.itoo.me',
+      builtinPreset: 'gpt-image-2',
+      maxRefImages: 16,
+      maxOutputSize: '4K',
+      supportsAdvancedParams: true,
+    }],
+    textModels: [],
+    defaults: {
+      textToImage: 'gpt-image-2',
+      imageToImage: 'gpt-image-2',
+      reversePrompt: '',
+      agent: '',
+      promptOptimize: '',
+      imageDescribe: '',
+    },
+  }))
+}
+
 describe('TextToImageForm', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -55,6 +81,7 @@ describe('TextToImageForm', () => {
   })
 
   it('shows image params control for GPT Image 2 model', async () => {
+    configureGptImageModel()
     const onSubmit = vi.fn()
     render(<TextToImageForm onSubmit={onSubmit} initialData={{ model: 'gpt-image-2' }} />)
 
@@ -62,6 +89,7 @@ describe('TextToImageForm', () => {
   })
 
   it('submits default image params for GPT Image 2 model when left on auto', async () => {
+    configureGptImageModel()
     const onSubmit = vi.fn()
     render(
       <TextToImageForm

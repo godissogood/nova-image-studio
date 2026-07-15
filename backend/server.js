@@ -30,6 +30,7 @@ const LIMIT_ERROR_MESSAGES = {
   tooManyPending: '你已有较多任务正在排队或生成，请稍后再提交。',
   notAcceptingTasks: '服务器正在升级维护，暂不接受新任务。未完成任务将继续完成。',
 };
+const DEFAULT_NOVA_API_BASE_URL = 'https://api.itoo.me';
 
 function parseEnvFile(filePath = ENV_FILE_PATH) {
   if (!fs.existsSync(filePath)) return {};
@@ -93,7 +94,11 @@ function normalizeProtocolBaseUrl(protocol, url) {
 }
 
 function resolveNovaApiBaseUrl() {
-  return normalizeBaseUrl(getRuntimeEnv().NOVA_API_BASE_URL) || 'https://api.openai.com';
+  return normalizeBaseUrl(getRuntimeEnv().NOVA_API_BASE_URL) || DEFAULT_NOVA_API_BASE_URL;
+}
+
+function resolveConfiguredUpstreamBaseUrl(protocol) {
+  return normalizeProtocolBaseUrl(protocol, resolveNovaApiBaseUrl());
 }
 
 function hashPromptGalleryPassword(password) {
@@ -630,7 +635,6 @@ function normalizeGptImageAdvancedParams(params = {}) {
 function validateCreatePayload(body) {
   if (!body || typeof body !== 'object') throw new Error('请求体不能为空');
   if (typeof body.apiKey !== 'string' || body.apiKey.trim().length === 0) throw new Error('缺少 API 密钥');
-  if (typeof body.baseUrl !== 'string' || body.baseUrl.trim().length === 0) throw new Error('缺少 API 基础地址');
   if (!VALID_PROTOCOLS.has(body.protocol)) throw new Error('协议类型无效，必须为 google 或 openai');
   if (body.mode !== 'text-to-image' && body.mode !== 'image-to-image') throw new Error('任务模式无效');
   if (typeof body.prompt !== 'string' || body.prompt.trim().length === 0) throw new Error('提示词不能为空');
@@ -638,9 +642,8 @@ function validateCreatePayload(body) {
   if (!Number.isInteger(body.parallelCount) || body.parallelCount < 1 || body.parallelCount > 4) throw new Error('并发数量无效');
 
   if (!Array.isArray(body.images)) body.images = [];
-  body.baseUrl = normalizeProtocolBaseUrl(body.protocol, body.baseUrl);
-  if (!body.baseUrl) throw new Error('缺少 API 基础地址');
-  // 开源版：不做模型级参数规范化，前端负责传递正确的参数，后端无条件透传
+  body.baseUrl = resolveConfiguredUpstreamBaseUrl(body.protocol);
+  // 模型参数由前端提供；上游地址始终使用服务端配置，避免客户端绕过。
 }
 
 function createTask(body, req) {
@@ -1078,7 +1081,7 @@ async function fetchWithTimeout(url, init) {
 
 async function generateNovaImage(apiKey, request) {
   // 开源版：根据前端传入的 protocol 字段路由到对应的 API 协议
-  const baseUrl = request.baseUrl || resolveNovaApiBaseUrl();
+  const baseUrl = resolveConfiguredUpstreamBaseUrl(request.protocol);
   if (request.protocol === 'openai') {
     return requestGptImage(apiKey, request, resolveGptImageRequestSize(request), { baseUrl });
   }
@@ -1588,13 +1591,13 @@ async function handleApi(req, res, pathname) {
     if (req.method === 'POST' && apiPathname === '/api/nova/proxy/text') {
       try {
         const body = await readJsonBody(req);
-        const { protocol, baseUrl, apiKey, model, stream, requestBody } = body;
-        if (!baseUrl || !apiKey) {
-          sendJson(res, 400, { error: 'Missing baseUrl or apiKey' });
+        const { protocol, apiKey, model, stream, requestBody } = body;
+        if (!apiKey) {
+          sendJson(res, 400, { error: 'Missing apiKey' });
           return true;
         }
 
-        const normalizedBaseUrl = normalizeProtocolBaseUrl(protocol, baseUrl);
+        const normalizedBaseUrl = resolveConfiguredUpstreamBaseUrl(protocol);
         let targetUrl;
         const authHeaders = { 'Content-Type': 'application/json' };
 
@@ -1677,15 +1680,14 @@ async function handleApi(req, res, pathname) {
     if (req.method === 'GET' && apiPathname === '/api/nova/proxy/models') {
       try {
         const parsed = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-        const baseUrl = parsed.searchParams.get('baseUrl');
         const apiKey = parsed.searchParams.get('apiKey');
         const protocol = parsed.searchParams.get('protocol') || 'openai';
-        if (!baseUrl || !apiKey) {
-          sendJson(res, 400, { error: 'Missing baseUrl or apiKey' });
+        if (!apiKey) {
+          sendJson(res, 400, { error: 'Missing apiKey' });
           return true;
         }
 
-        const normalizedBaseUrl = normalizeProtocolBaseUrl(protocol, baseUrl);
+        const normalizedBaseUrl = resolveConfiguredUpstreamBaseUrl(protocol);
         let modelsUrl = `${normalizedBaseUrl}/v1/models`;
         const headers = {};
 

@@ -9,6 +9,7 @@ gpt_image_playground-main
 MagicalCanvas-main/
 # testing
 coverage/
+.playwright-cli/
 
 # next.js
 .next/
@@ -42,6 +43,7 @@ data/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+local-preview.*.log
 
 # local env files
 .env
