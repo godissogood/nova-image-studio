@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Database,
   Download,
-  ExternalLink,
   Eye,
   EyeOff,
   ImageIcon,
@@ -58,8 +57,6 @@ import { syncDynamicModelExports } from '@/lib/gemini-config';
 import { exportAllData, importAllData, downloadBlob, generateBackupFilename, type BackupProgress as BackupProgressType } from '@/lib/backup-utils';
 import { checkModelsAvailability, type ModelStatus } from '@/lib/ccode-task-client';
 import { hasAnyApiKey } from '@/lib/settings-storage';
-import { BA_RANDOM_URL, BING_WALLPAPER_URL } from '@/lib/constants';
-import { PROMPT_DATA_SOURCES, getPromptSourceLabel } from '@/lib/prompt-gallery-data';
 import { DEFAULT_IMAGE_MODEL_ID, DEFAULT_TEXT_MODEL_ID } from '@/lib/itoo-config';
 
 interface SettingsModalProps {
@@ -740,63 +737,16 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
 
           <TabsContent value="about" className="min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4 mt-0">
             <div className="space-y-4 text-sm">
-              <h3 className="text-lg font-medium">Nova Image <span className="text-xs text-muted-foreground font-normal">v{process.env.NEXT_PUBLIC_APP_VERSION}</span></h3>
-              <p className="text-sm text-muted-foreground">
-                项目地址：
-                {' '}
-                <a
-                  href="https://github.com/tianjiangqiji/nova-image-studio"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-primary hover:underline"
-                >
-                  tianjiangqiji/nova-image-studio <ExternalLink className="w-3 h-3" />
-                </a>
-              </p>
-
               <details className="group rounded-lg bg-muted/50 p-3">
                 <summary className="flex cursor-pointer select-none items-center gap-2 font-medium">
                   <span className="text-[10px] opacity-60 transition-transform group-open:rotate-90">▶</span>
                   使用方法
                 </summary>
                 <ol className="mt-3 list-decimal list-inside space-y-2 text-muted-foreground">
-                  <li>先完成至少一个图片模型和一个文本模型的全部信息。</li>
+                  <li>先完成至少一个图片模型和一个文本模型的全部信息。（中转站创建2个API，一个用于GPT推理，一个是生图专用的API）</li>
                   <li>保存后，外部工作区只会显示这些配置完整的模型。</li>
                   <li>再为各工作流指定默认模型，即可开始生图、反推或 Agent 工作流。</li>
                 </ol>
-              </details>
-
-              <details className="group rounded-lg bg-muted/50 p-3">
-                <summary className="flex cursor-pointer select-none items-center gap-2 font-medium">
-                  <span className="text-[10px] opacity-60 transition-transform group-open:rotate-90">▶</span>
-                  数据来源
-                </summary>
-                <ul className="mt-3 list-disc list-inside space-y-2 text-muted-foreground">
-                  <li>
-                    <span className="text-foreground">提示词广场</span> - 提示词来源：
-                    <ul className="mt-1 ml-5 list-disc list-inside space-y-1">
-                      {PROMPT_DATA_SOURCES.map((source) => (
-                        <li key={source.name}>
-                          <a href={source.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                            {getPromptSourceLabel(source.sourceUrl)} <ExternalLink className="w-3 h-3" />
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                  <li>
-                    <span className="text-foreground">随机图片 · BA人物</span> -{' '}
-                    <a href={BA_RANDOM_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                      img.catcdn.cn <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </li>
-                  <li>
-                    <span className="text-foreground">随机图片 · Bing壁纸</span> -{' '}
-                    <a href={BING_WALLPAPER_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                      bing.img.run <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </li>
-                </ul>
               </details>
 
               <details className="group rounded-lg bg-muted/50 p-3">
@@ -812,38 +762,6 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                 </ul>
               </details>
 
-              <details className="group rounded-lg bg-muted/50 p-3">
-                <summary className="flex cursor-pointer select-none items-center gap-2 font-medium">
-                  <span className="text-[10px] opacity-60 transition-transform group-open:rotate-90">▶</span>
-                  参考项目
-                </summary>
-                <ul className="mt-3 list-disc list-inside space-y-2 text-muted-foreground">
-                  <li>
-                    项目仓库：
-                    {' '}
-                    <a href="https://github.com/tianjiangqiji/nova-image-studio" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                      tianjiangqiji/nova-image-studio <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </li>
-                  <li>
-                    基于
-                    {' '}
-                    <a href="https://github.com/aaronkwhite/nanobanana-studio-web" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                      aaronkwhite/nanobanana-studio-web <ExternalLink className="w-3 h-3" />
-                    </a>
-                    {' '}
-                    修改而来。
-                  </li>
-                  <li>
-                    无限画布工作区参考
-                    {' '}
-                    <a href="https://github.com/basketikun/infinite-canvas" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                      basketikun/infinite-canvas <ExternalLink className="w-3 h-3" />
-                    </a>
-                    。
-                  </li>
-                </ul>
-              </details>
             </div>
           </TabsContent>
         </Tabs>

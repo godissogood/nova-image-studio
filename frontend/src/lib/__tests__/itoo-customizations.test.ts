@@ -18,6 +18,11 @@ import { normalizeModel, resolveAgentModel } from '@/lib/model-capabilities';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const serverSource = fs.readFileSync(path.resolve(testDir, '../../../../backend/server.js'), 'utf8');
+const settingsModalSource = fs.readFileSync(path.resolve(testDir, '../../components/SettingsModal.tsx'), 'utf8');
+const layoutSource = fs.readFileSync(path.resolve(testDir, '../../app/layout.tsx'), 'utf8');
+const workspaceHeaderSource = fs.readFileSync(path.resolve(testDir, '../../components/workspace/WorkspaceHeader.tsx'), 'utf8');
+const workspaceShellSource = fs.readFileSync(path.resolve(testDir, '../../components/workspace/WorkspaceShell.tsx'), 'utf8');
+const manifestSource = fs.readFileSync(path.resolve(testDir, '../../../public/manifest.json'), 'utf8');
 
 const tamperedRegistry: NovaModelRegistry = {
   imageModels: [{
@@ -111,5 +116,30 @@ describe('itoo server upstream policy', () => {
     expect(serverSource).toContain('body.baseUrl = resolveConfiguredUpstreamBaseUrl(body.protocol)');
     expect(serverSource.match(/const normalizedBaseUrl = resolveConfiguredUpstreamBaseUrl\(protocol\);/g)).toHaveLength(2);
     expect(serverSource).not.toContain('normalizeProtocolBaseUrl(protocol, baseUrl)');
+  });
+});
+
+describe('itoo branding and about content', () => {
+  it('uses the iToo Image name across user-visible application surfaces', () => {
+    const brandedSources = [
+      layoutSource,
+      workspaceHeaderSource,
+      workspaceShellSource,
+      manifestSource,
+      serverSource,
+    ];
+
+    expect(brandedSources.every(source => source.includes('iToo Image'))).toBe(true);
+    expect([...brandedSources, settingsModalSource].every(source => !source.includes('Nova Image'))).toBe(true);
+  });
+
+  it('keeps only usage and privacy sections in About without external links', () => {
+    expect(settingsModalSource.match(/<details\b/g)).toHaveLength(2);
+    expect(settingsModalSource).toContain('使用方法');
+    expect(settingsModalSource).toContain('隐私条款');
+    expect(settingsModalSource).toContain('中转站创建2个API，一个用于GPT推理，一个是生图专用的API');
+    expect(settingsModalSource).not.toContain('数据来源');
+    expect(settingsModalSource).not.toContain('参考项目');
+    expect(settingsModalSource).not.toMatch(/href=|https?:\/\//);
   });
 });
