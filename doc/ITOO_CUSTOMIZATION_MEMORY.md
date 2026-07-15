@@ -171,10 +171,12 @@ curl -i https://img.itoo.me/api/nova/config
 | --- | --- | --- | --- |
 | 2026-07-15 | `9760aaf` | `godissogood/nova-image-studio:9760aaf` | OVH `healthy`；公网/API `200`；固定上游伪造测试通过；Playwright 页面、默认值、只读属性和控制台验收通过 |
 | 2026-07-15 | `da93aae` | `godissogood/nova-image-studio:da93aae` | OVH `healthy`；模型配置即时生效；Agent/工作台使用配置模型；Nova 内部直连 Sub2API；Cloudflare-only 防火墙验收通过 |
+| 2026-07-16 | `b9011a2` | `godissogood/nova-image-studio:b9011a2` | OVH `healthy`；公网首页与配置 API `200`；品牌改为 `iToo Image`；关于页只保留使用方法和隐私条款；桌面/手机与线上 Playwright 验收通过；控制台 0 错误、0 警告 |
 
 本次服务器回滚备份：
 
 - Nova Compose 与 `.env`：`/root/nova-backups/pre-internal-routing-20260715-2308/`
+- 本次品牌更新前 `.env`：`/root/nova-backups/nova-env-pre-b9011a2-20260716`
 - Sub2API Compose：`/opt/sub2api/docker-compose.yml.bak.pre-internal-routing-20260715-2308`
 - Caddy：`/etc/caddy/Caddyfile.bak.pre-cloudflare-only-20260715-2322`
 - UFW：`/etc/ufw/user.rules.bak.pre-cloudflare-only-20260715-2325`、`/etc/ufw/user6.rules.bak.pre-cloudflare-only-20260715-2325`
