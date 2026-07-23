@@ -172,6 +172,7 @@ curl -i https://img.itoo.me/api/nova/config
 | 2026-07-15 | `9760aaf` | `godissogood/nova-image-studio:9760aaf` | OVH `healthy`；公网/API `200`；固定上游伪造测试通过；Playwright 页面、默认值、只读属性和控制台验收通过 |
 | 2026-07-15 | `da93aae` | `godissogood/nova-image-studio:da93aae` | OVH `healthy`；模型配置即时生效；Agent/工作台使用配置模型；Nova 内部直连 Sub2API；Cloudflare-only 防火墙验收通过 |
 | 2026-07-16 | `b9011a2` | `godissogood/nova-image-studio:b9011a2` | OVH `healthy`；公网首页与配置 API `200`；品牌改为 `iToo Image`；关于页只保留使用方法和隐私条款；桌面/手机与线上 Playwright 验收通过；控制台 0 错误、0 警告 |
+| 2026-07-23 | `71877c7` | `godissogood/nova-image-studio:71877c7` | OVH `healthy`；公网首页 `200`；GPT Image 2 工作台隐藏风格参数；旧客户端的 `style` 在 Nova 入队和 JSON/multipart 请求构造中均被移除；烟囱请求已到达上游但因 `503 No eligible Grok media accounts` 失败，未再出现 `tools[0].style`；Playwright 参数面板验收通过 |
 
 本次服务器回滚备份：
 
