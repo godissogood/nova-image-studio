@@ -1090,6 +1090,7 @@ export function AgentChatWorkspace({ wideMode = false, disabled = false, onConfi
 
               {supportsAdvancedParams && (
                 <GptImageAdvancedParamsControl
+                  model={userModel}
                   value={userAdvancedParams}
                   onChange={setUserAdvancedParams}
                   variant="outline"

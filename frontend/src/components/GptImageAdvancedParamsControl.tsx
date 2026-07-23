@@ -9,6 +9,7 @@ import {
   GPT_IMAGE_BACKGROUND_OPTIONS,
   GPT_IMAGE_QUALITY_OPTIONS,
   GPT_IMAGE_STYLE_OPTIONS,
+  supportsGptImageStyle,
   type GptImageAdvancedParams,
   type GptImageBackground,
   type GptImageQuality,
@@ -16,6 +17,7 @@ import {
 } from '@/lib/model-capabilities';
 
 interface GptImageAdvancedParamsControlProps {
+  model?: string;
   value: GptImageAdvancedParams;
   onChange: (value: GptImageAdvancedParams) => void;
   disabled?: boolean;
@@ -23,43 +25,53 @@ interface GptImageAdvancedParamsControlProps {
   size?: 'xs' | 'sm';
 }
 
-function isDefaultValue(value: GptImageAdvancedParams): boolean {
+function isDefaultValue(value: GptImageAdvancedParams, showStyle: boolean): boolean {
   return (
     value.quality === DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.quality &&
-    value.style === DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.style &&
+    (!showStyle || value.style === DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.style) &&
     value.background === DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.background
   );
 }
 
-function formatLabel(value: GptImageAdvancedParams): string {
-  if (isDefaultValue(value)) return '图像参数';
+function formatLabel(value: GptImageAdvancedParams, showStyle: boolean): string {
+  if (isDefaultValue(value, showStyle)) return '图像参数';
   const quality = GPT_IMAGE_QUALITY_OPTIONS.find(option => option.value === value.quality)?.label || value.quality;
   const style = GPT_IMAGE_STYLE_OPTIONS.find(option => option.value === value.style)?.label || value.style;
   const background = GPT_IMAGE_BACKGROUND_OPTIONS.find(option => option.value === value.background)?.label || value.background;
-  return `${quality}/${style}/${background}`;
+  return showStyle ? `${quality}/${style}/${background}` : `${quality}/${background}`;
 }
 
 export function GptImageAdvancedParamsControl({
+  model,
   value,
   onChange,
   disabled = false,
   variant = 'ghost',
   size = 'xs',
 }: GptImageAdvancedParamsControlProps) {
+  const showStyle = model === undefined || supportsGptImageStyle(model);
   const triggerClass = cn(
     buttonVariants({ variant, size }),
     'gap-1',
   );
 
-  const updateQuality = (quality: GptImageQuality) => onChange({ ...value, quality });
+  const updateQuality = (quality: GptImageQuality) => onChange({
+    ...value,
+    quality,
+    ...(showStyle ? {} : { style: DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.style }),
+  });
   const updateStyle = (style: GptImageStyle) => onChange({ ...value, style });
-  const updateBackground = (background: GptImageBackground) => onChange({ ...value, background });
+  const updateBackground = (background: GptImageBackground) => onChange({
+    ...value,
+    background,
+    ...(showStyle ? {} : { style: DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.style }),
+  });
 
   return (
     <Popover>
       <PopoverTrigger className={triggerClass} disabled={disabled} title="图像参数">
         <SlidersHorizontal className="h-3 w-3" />
-        <span className="shrink-0 truncate text-[11px]">{formatLabel(value)}</span>
+        <span className="shrink-0 truncate text-[11px]">{formatLabel(value, showStyle)}</span>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-2" align="start">
         <div className="space-y-3">
@@ -69,12 +81,14 @@ export function GptImageAdvancedParamsControl({
             value={value.quality}
             onSelect={updateQuality}
           />
-          <ParamGroup
-            label="风格"
-            options={GPT_IMAGE_STYLE_OPTIONS}
-            value={value.style}
-            onSelect={updateStyle}
-          />
+          {showStyle && (
+            <ParamGroup
+              label="风格"
+              options={GPT_IMAGE_STYLE_OPTIONS}
+              value={value.style}
+              onSelect={updateStyle}
+            />
+          )}
           <ParamGroup
             label="背景"
             options={GPT_IMAGE_BACKGROUND_OPTIONS}

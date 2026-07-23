@@ -88,6 +88,17 @@ describe('TextToImageForm', () => {
     expect(await screen.findByTitle('图像参数')).toBeInTheDocument()
   })
 
+  it('hides unsupported style controls for GPT Image 2', async () => {
+    const onSubmit = vi.fn()
+    render(<TextToImageForm onSubmit={onSubmit} initialData={{ model: 'gpt-image-2' }} />)
+
+    fireEvent.click(await screen.findByTitle('图像参数'))
+
+    expect(screen.queryByText('风格')).not.toBeInTheDocument()
+    expect(screen.queryByText('鲜明')).not.toBeInTheDocument()
+    expect(screen.queryByText('自然')).not.toBeInTheDocument()
+  })
+
   it('submits default image params for GPT Image 2 model when left on auto', async () => {
     const onSubmit = vi.fn()
     render(

@@ -114,7 +114,7 @@ beforeEach(() => {
 });
 
 describe('submitTextToImage', () => {
-  it('passes GPT Image advanced params into createNovaTask payload', async () => {
+  it('forces unsupported GPT Image style to auto before creating a task', async () => {
     const job = makeJob();
     const { actions, getJob } = createActions(job);
 
@@ -135,12 +135,12 @@ describe('submitTextToImage', () => {
       mode: 'text-to-image',
       model: 'gpt-image-2',
       gptImageQuality: 'high',
-      gptImageStyle: 'vivid',
+      gptImageStyle: 'auto',
       gptImageBackground: 'transparent',
     }));
     expect(actions.addJob).toHaveBeenCalledWith(expect.objectContaining({
       gptImageQuality: 'high',
-      gptImageStyle: 'vivid',
+      gptImageStyle: 'auto',
       gptImageBackground: 'transparent',
     }));
     expect(getJob().serverTaskId).toBe('task-advanced-1');

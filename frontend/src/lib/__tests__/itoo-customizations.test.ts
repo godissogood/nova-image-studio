@@ -14,7 +14,12 @@ import {
   saveRegistry,
   type NovaModelRegistry,
 } from '@/lib/nova-models';
-import { normalizeModel, resolveAgentModel } from '@/lib/model-capabilities';
+import {
+  getGptImageAdvancedParamsForModel,
+  normalizeModel,
+  resolveAgentModel,
+  supportsGptImageStyle,
+} from '@/lib/model-capabilities';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const serverSource = fs.readFileSync(path.resolve(testDir, '../../../../backend/server.js'), 'utf8');
@@ -102,6 +107,21 @@ describe('itoo model defaults', () => {
     expect(resolveAgentModel('gemini-3-pro-image-preview', undefined, undefined, [
       { id: 'configured-image', name: 'Configured Image', maxOutputSize: '4K' },
     ])).toBe('configured-image');
+  });
+
+  it('normalizes style to auto for models using the gpt-image-2 preset', () => {
+    localStorage.setItem('nova-model-registry', JSON.stringify(tamperedRegistry));
+
+    expect(supportsGptImageStyle('image-1')).toBe(false);
+    expect(getGptImageAdvancedParamsForModel('image-1', {
+      quality: 'high',
+      style: 'natural',
+      background: 'transparent',
+    })).toEqual({
+      quality: 'high',
+      style: 'auto',
+      background: 'transparent',
+    });
   });
 
   it('has no image-model fallback when no image model is configured', () => {

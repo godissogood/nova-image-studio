@@ -239,6 +239,11 @@ export function supportsGptImageAdvancedParams(model: string): boolean {
   return Boolean(preset?.supportsAdvancedParams);
 }
 
+export function supportsGptImageStyle(model: string): boolean {
+  const presetId = getBuiltinPresetId(model);
+  return !String(presetId || model).startsWith('gpt-image-2');
+}
+
 export function normalizeGptImageQuality(value?: string): GptImageQuality {
   return GPT_IMAGE_QUALITY_OPTIONS.some(option => option.value === value)
     ? (value as GptImageQuality)
@@ -267,7 +272,9 @@ export function getGptImageAdvancedParamsForModel(
 
   return {
     quality: normalizeGptImageQuality(params?.quality),
-    style: normalizeGptImageStyle(params?.style),
+    style: supportsGptImageStyle(model)
+      ? normalizeGptImageStyle(params?.style)
+      : DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.style,
     background: normalizeGptImageBackground(params?.background),
   };
 }

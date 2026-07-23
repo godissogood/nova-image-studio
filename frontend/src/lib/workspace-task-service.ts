@@ -330,6 +330,12 @@ export async function submitTextToImage(
     return;
   }
 
+  const advancedParams = getGptImageAdvancedParamsForModel(model, {
+    quality: input.gptImageQuality,
+    style: input.gptImageStyle,
+    background: input.gptImageBackground,
+  });
+
   for (const prompt of input.prompts) {
     const job = createBaseJob(
       'text-to-image',
@@ -339,9 +345,9 @@ export async function submitTextToImage(
       input.aspectRatio,
       input.temperature,
       model,
-      input.gptImageQuality,
-      input.gptImageStyle,
-      input.gptImageBackground,
+      advancedParams.quality,
+      advancedParams.style,
+      advancedParams.background,
       input.parallelCount
     );
     actions.addJob(job);
@@ -358,9 +364,9 @@ export async function submitTextToImage(
         aspectRatio: input.aspectRatio,
         temperature: input.temperature,
         model: provider.modelId,
-        gptImageQuality: input.gptImageQuality,
-        gptImageStyle: input.gptImageStyle,
-        gptImageBackground: input.gptImageBackground,
+        gptImageQuality: advancedParams.quality,
+        gptImageStyle: advancedParams.style,
+        gptImageBackground: advancedParams.background,
         parallelCount: input.parallelCount,
         images: [],
       });
@@ -394,6 +400,12 @@ export async function submitImageToImage(
     return;
   }
 
+  const advancedParams = getGptImageAdvancedParamsForModel(model, {
+    quality: input.gptImageQuality,
+    style: input.gptImageStyle,
+    background: input.gptImageBackground,
+  });
+
   const refImages = input.files.map(file => ({
     id: file.id,
     name: file.name,
@@ -409,9 +421,9 @@ export async function submitImageToImage(
     input.aspectRatio,
     input.temperature,
     model,
-    input.gptImageQuality,
-    input.gptImageStyle,
-    input.gptImageBackground,
+    advancedParams.quality,
+    advancedParams.style,
+    advancedParams.background,
     input.parallelCount,
     refImages
   );
@@ -430,9 +442,9 @@ export async function submitImageToImage(
       aspectRatio: input.aspectRatio,
       temperature: input.temperature,
       model: provider.modelId,
-      gptImageQuality: input.gptImageQuality,
-      gptImageStyle: input.gptImageStyle,
-      gptImageBackground: input.gptImageBackground,
+      gptImageQuality: advancedParams.quality,
+      gptImageStyle: advancedParams.style,
+      gptImageBackground: advancedParams.background,
       parallelCount: input.parallelCount,
       images: imageReferences,
     });

@@ -189,10 +189,13 @@ async function fetchWithTimeout(
 }
 
 export async function createNovaTask(input: CreateNovaTaskInput): Promise<string> {
+  const request = input.protocol === 'openai'
+    ? { ...input, gptImageStyle: 'auto' as const }
+    : input;
   const response = await fetchWithTimeout('/api/nova/tasks', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+    body: JSON.stringify(request),
   }, CREATE_TASK_TIMEOUT);
   const data = await parseTaskResponse<CreateTaskResponse>(response);
   if (!data?.taskId) throw new Error('创建任务失败：后端未返回任务 ID');

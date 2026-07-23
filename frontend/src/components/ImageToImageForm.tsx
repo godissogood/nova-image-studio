@@ -860,6 +860,7 @@ export function ImageToImageForm({
 
           {supportsAdvancedParams && (
             <GptImageAdvancedParamsControl
+              model={model}
               value={gptImageAdvancedParams}
               onChange={setGptImageAdvancedParams}
               variant="outline"
