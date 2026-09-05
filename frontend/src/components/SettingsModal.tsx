@@ -518,7 +518,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">Base URL</label>
-                      <Input value={selectedImageModel.baseUrl} onChange={(event) => handleUpdateImageModel(selectedImageModel.id, { baseUrl: event.target.value })} />
+                      <Input value={selectedImageModel.baseUrl} readOnly aria-readonly="true" />
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">API Key</label>
@@ -640,7 +640,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">Base URL</label>
-                      <Input value={selectedTextModel.baseUrl} onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { baseUrl: event.target.value })} />
+                      <Input value={selectedTextModel.baseUrl} readOnly aria-readonly="true" />
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">API Key</label>
@@ -817,7 +817,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                   使用方法
                 </summary>
                 <ol className="mt-3 list-decimal list-inside space-y-2 text-muted-foreground">
-                  <li>先完成至少一个图片模型和一个文本模型的全部信息。（中转站创建 2 个 API，一个用于 GPT 推理，一个用于生图。）</li>
+                  <li>先完成至少一个图片模型和一个文本模型的全部信息。（中转站创建2个API，一个用于GPT推理，一个是生图专用的API）</li>
                   <li>保存后，外部工作区只会显示这些配置完整的模型。</li>
                   <li>再为各工作流指定默认模型，即可开始生图、反推或 Agent 工作流。</li>
                 </ol>

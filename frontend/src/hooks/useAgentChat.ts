@@ -19,7 +19,6 @@ import {
   type StreamAgentHandle,
 } from '@/lib/agent-chat-client';
 import {
-  AGENT_DEFAULT_IMAGE_MODEL_FALLBACK,
   type AgentMessage,
   type AgentImageRecord,
   type AgentProposal,
@@ -182,7 +181,7 @@ export function useAgentChat() {
   const [proposal, setProposal] = useState<AgentProposal | null>(null);
   const [streamingText, setStreamingText] = useState('');
   const [streamingReasoning, setStreamingReasoning] = useState('');
-  const [imageModel, setImageModelState] = useState<ModelId>(AGENT_DEFAULT_IMAGE_MODEL_FALLBACK);
+  const [imageModel, setImageModelState] = useState<ModelId>('');
   const [error, setError] = useState<string | null>(null);
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [generatingStartedAt, setGeneratingStartedAt] = useState<number | null>(null);
