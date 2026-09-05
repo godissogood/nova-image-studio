@@ -23,6 +23,7 @@ function Select<T extends string>({
   className,
   contentClassName,
   disabled,
+  ariaLabel,
   size = "default",
 }: {
   value: T
@@ -32,6 +33,7 @@ function Select<T extends string>({
   className?: string
   contentClassName?: string
   disabled?: boolean
+  ariaLabel?: string
   size?: "sm" | "default"
 }) {
   return (
@@ -43,6 +45,7 @@ function Select<T extends string>({
     >
       <SelectPrimitive.Trigger
         data-slot="select-trigger"
+        aria-label={ariaLabel}
         className={cn(
           "inline-flex w-full items-center justify-between gap-2 rounded-lg border border-input bg-transparent px-2.5 text-sm transition-colors outline-none select-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[popup-open]:bg-muted/50 dark:bg-input/30",
           size === "sm" ? "h-7" : "h-8",
@@ -62,7 +65,7 @@ function Select<T extends string>({
         >
           <SelectPrimitive.Popup
             className={cn(
-              "max-h-[min(24rem,var(--available-height))] min-w-[var(--anchor-width)] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none",
+              "max-h-[min(24rem,var(--available-height))] min-w-[var(--anchor-width)] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
               contentClassName
             )}
           >
@@ -71,7 +74,7 @@ function Select<T extends string>({
                 key={option.value}
                 value={option.value}
                 disabled={option.disabled}
-                className="relative flex cursor-pointer items-center gap-2 rounded-md py-1.5 pr-8 pl-2.5 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-muted"
+                className="relative flex cursor-pointer items-center gap-2 rounded-md py-1.5 pr-8 pl-2.5 text-sm transition-colors outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-muted"
               >
                 <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
                 <SelectPrimitive.ItemIndicator className="absolute right-2 flex items-center text-primary">

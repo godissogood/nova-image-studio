@@ -6,6 +6,13 @@ const next = process.env.NODE_ENV !== 'production' ? require('next') : null;
 const Database = require('better-sqlite3');
 const { WebSocketServer } = require('ws');
 
+// 视频插件系统。协议细节（发什么请求、怎么轮询、结果在哪）全在 backend/plugins/<id>/ 的
+// JSON 里，这里只负责调度与生命周期，与内置图片任务共用同一套队列。见 docs/plugins/。
+const pluginRegistry = require('./plugin-runtime/registry');
+const pluginExecutor = require('./plugin-runtime/executor');
+const { validateAndNormalizeInput, InputError } = require('./plugin-runtime/input');
+const { createMediaStore } = require('./plugin-runtime/media');
+
 const ENV_FILE_PATH = path.join(process.cwd(), '.env');
 const TASK_STATUS = {
   QUEUED: '排队中',
@@ -30,7 +37,6 @@ const LIMIT_ERROR_MESSAGES = {
   tooManyPending: '你已有较多任务正在排队或生成，请稍后再提交。',
   notAcceptingTasks: '服务器正在升级维护，暂不接受新任务。未完成任务将继续完成。',
 };
-const DEFAULT_NOVA_API_BASE_URL = 'https://api.itoo.me';
 
 function parseEnvFile(filePath = ENV_FILE_PATH) {
   if (!fs.existsSync(filePath)) return {};
@@ -93,10 +99,14 @@ function normalizeProtocolBaseUrl(protocol, url) {
   return normalized.endsWith('/v1') ? normalized.slice(0, -3) : normalized;
 }
 
+const DEFAULT_NOVA_API_BASE_URL = 'https://api.itoo.me';
+
 function resolveNovaApiBaseUrl() {
   return normalizeBaseUrl(getRuntimeEnv().NOVA_API_BASE_URL) || DEFAULT_NOVA_API_BASE_URL;
 }
 
+// Core requests always use the configured relay; client baseUrl values are
+// accepted only for compatibility with older clients.
 function resolveConfiguredUpstreamBaseUrl(protocol) {
   return normalizeProtocolBaseUrl(protocol, resolveNovaApiBaseUrl());
 }
@@ -110,13 +120,16 @@ function hashPromptGalleryPassword(password) {
 const PORT = Number(process.env.PORT || 3000);
 const HOSTNAME = process.env.HOSTNAME || '0.0.0.0';
 const DB_PATH = process.env.NOVA_TASK_DB || path.join(__dirname, 'nova-tasks.sqlite');
-const TASK_TTL_MS = 12 * 60 * 60 * 1000;
+const TASK_TTL_MS = (Number(process.env.NOVA_TASK_TTL_HOURS) || 12) * 60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-const IMAGE_STREAM_UNSUPPORTED_PATTERN = /(?:stream.*(?:unsupported|not supported|unknown|unrecognized|invalid)|(?:unsupported|not supported|unknown|unrecognized|invalid).*stream|stream.*(?:不支持|未知|无效)|(?:不支持|未知|无效).*stream)/i;
+const IMAGE_STREAM_ENABLED = String(process.env.NOVA_IMAGE_STREAM ?? 'true').toLowerCase() !== 'false';
+const IMAGE_STREAM_PARTIAL_IMAGES = Math.min(3, Math.max(0, Number.parseInt(process.env.NOVA_IMAGE_PARTIAL_IMAGES || '1', 10) || 1));
+const IMAGE_STREAM_UNSUPPORTED_PATTERN = /(?:(?:stream|partial_images).*(?:unsupported|not supported|unknown|unrecognized|invalid)|(?:unsupported|not supported|unknown|unrecognized|invalid).*(?:stream|partial_images)|(?:stream|partial_images).*(?:不支持|未知|无效)|(?:不支持|未知|无效).*(?:stream|partial_images))/i;
 // 开源版：不再硬编码模型列表，由前端通过 protocol 字段指定协议类型
-const VALID_PROTOCOLS = new Set(['google', 'openai']);
+const VALID_PROTOCOLS = new Set(['google', 'openai', 'grok']);
 const GPT_IMAGE_QUALITIES = new Set(['auto', 'high', 'medium', 'low']);
+const GPT_IMAGE_STYLES = new Set(['auto', 'vivid', 'natural']);
 const GPT_IMAGE_BACKGROUNDS = new Set(['auto', 'transparent', 'opaque']);
 const DEFAULT_GPT_IMAGE_ADVANCED_PARAMS = {
   quality: 'auto',
@@ -145,6 +158,18 @@ const pendingCountByIp = new Map(); // ip -> count
 const pendingCountByApiKeyHash = new Map(); // apiKeyHash -> count
 const queue = [];
 let activeCount = 0;
+
+/**
+ * 插件任务的上游实时进度与状态。这两个是过程量，不入库：服务器重启时所有未终态任务
+ * 一律标失败（见 initDatabase），重启后没有需要恢复的进度。
+ */
+const pluginTaskProgress = new Map(); // taskId -> { progress?: number, upstreamStatus?: string }
+const pluginTaskCache = new Map(); // taskId -> { lastPolledAt: number, cachedResponse: object, inFlightPromise: Promise|null }
+const runningTaskPromises = new Set();
+let isShuttingDown = false;
+let shutdownPromise = null;
+let httpServerRef = null;
+let wsServerRef = null;
 
 // ===== WebSocket subscription state =====
 const taskSubscriptions = new Map(); // WebSocket -> Set<taskId>
@@ -209,6 +234,19 @@ function hashApiKey(apiKey) {
   return createHash('sha256').update(String(apiKey || '')).digest('hex').slice(0, 24);
 }
 
+/**
+ * 插件参考素材的存储。上游的视频接口只接受 URL，所以素材先落盘本机，
+ * 再把公网地址交给上游去拉；素材绑定任务后随任务一起清理。
+ */
+const pluginMedia = createMediaStore({
+  db,
+  getRuntimeEnv,
+  parseIntegerEnv,
+  createHttpError,
+  getClientIp,
+  normalizeBaseUrl,
+});
+
 function cleanupTaskRuntimeState(taskId) {
   const source = taskSources.get(taskId);
   if (source) {
@@ -234,6 +272,7 @@ function cleanupTaskRuntimeState(taskId) {
   apiKeys.delete(taskId);
   taskRefImages.delete(taskId);
   taskSources.delete(taskId);
+  pluginTaskProgress.delete(taskId);
 }
 
 function getPendingCountForSource(fieldName, value) {
@@ -322,7 +361,7 @@ function getQueueStats() {
   const processingCount = counts[TASK_STATUS.PROCESSING] || 0;
   const queuedCount = (counts[TASK_STATUS.QUEUED] || 0) + (counts[TASK_STATUS.LEGACY_QUEUED] || 0);
   const totalActiveTasks = processingCount + queuedCount;
-  const acceptingNewTasks = !isRejectNewTasksEnabled();
+  const acceptingNewTasks = !isShuttingDown && !isRejectNewTasksEnabled();
 
   return {
     concurrencyLimit: GLOBAL_TASK_CONCURRENCY,
@@ -453,6 +492,9 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_tasks_expires_at ON tasks(expires_at);
     CREATE INDEX IF NOT EXISTS idx_task_items_task_id ON task_items(task_id);
   `);
+
+  // 插件素材表（plugin_media）与任务表同库，任务清理即素材清理
+  pluginMedia.initSchema();
 
   const now = new Date().toISOString();
   db.prepare('UPDATE tasks SET status = ? WHERE status = ?').run(TASK_STATUS.QUEUED, TASK_STATUS.LEGACY_QUEUED);
@@ -599,6 +641,42 @@ function readJsonBody(req) {
   });
 }
 
+/** 图片编辑代理的请求体上限。image + mask 两张 PNG，按 4096² 上限留出余量。 */
+const MAX_IMAGE_EDIT_BODY_BYTES = 64 * 1024 * 1024; // 64MB
+
+/**
+ * 读取原始请求体为 Buffer，不做任何解析。
+ * 供 multipart 透传使用：解析再重组 multipart 既费内存也容易破坏 boundary。
+ */
+function readRawBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let aborted = false;
+    req.on('data', chunk => {
+      if (aborted) return;
+      size += chunk.length;
+      if (size > maxBytes) {
+        aborted = true;
+        chunks.length = 0;
+        req.resume(); // 排空剩余入站数据，避免客户端收到连接重置
+        reject(createHttpError(
+          413,
+          'PAYLOAD_TOO_LARGE',
+          `图片数据过大（超过 ${Math.round(maxBytes / 1024 / 1024)}MB），请缩小源图后重试。`,
+        ));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (aborted) return;
+      resolve(Buffer.concat(chunks));
+    });
+    req.on('error', reject);
+  });
+}
+
 function normalizeError(error) {
   const message = error instanceof Error ? error.message : String(error);
   if (/failed to fetch|fetch failed|networkerror|network request failed|load failed|network connection was lost|econnreset|socket hang up|terminated/i.test(message)) {
@@ -619,14 +697,14 @@ function validateEnumValue(value, validValues, fieldName) {
   return value;
 }
 
-// The relay's Responses image_generation tool rejects style; keep OpenAI image tasks compatible.
 function normalizeGptImageAdvancedParams(params = {}) {
   const quality = validateEnumValue(params.gptImageQuality, GPT_IMAGE_QUALITIES, 'quality');
+  const style = validateEnumValue(params.gptImageStyle, GPT_IMAGE_STYLES, 'style');
   const background = validateEnumValue(params.gptImageBackground, GPT_IMAGE_BACKGROUNDS, 'background');
 
   return {
     quality: quality || DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.quality,
-    style: DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.style,
+    style: style || DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.style,
     background: background || DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.background,
   };
 }
@@ -634,24 +712,22 @@ function normalizeGptImageAdvancedParams(params = {}) {
 function validateCreatePayload(body) {
   if (!body || typeof body !== 'object') throw new Error('请求体不能为空');
   if (typeof body.apiKey !== 'string' || body.apiKey.trim().length === 0) throw new Error('缺少 API 密钥');
-  if (!VALID_PROTOCOLS.has(body.protocol)) throw new Error('协议类型无效，必须为 google 或 openai');
+  if (typeof body.baseUrl !== 'string' || body.baseUrl.trim().length === 0) throw new Error('缺少 API 基础地址');
+  if (!VALID_PROTOCOLS.has(body.protocol)) throw new Error('协议类型无效，必须为 google、openai 或 grok');
   if (body.mode !== 'text-to-image' && body.mode !== 'image-to-image') throw new Error('任务模式无效');
   if (typeof body.prompt !== 'string' || body.prompt.trim().length === 0) throw new Error('提示词不能为空');
   if (typeof body.model !== 'string' || body.model.trim().length === 0) throw new Error('模型名称不能为空');
   if (!Number.isInteger(body.parallelCount) || body.parallelCount < 1 || body.parallelCount > 4) throw new Error('并发数量无效');
 
   if (!Array.isArray(body.images)) body.images = [];
-  if (body.protocol === 'openai') {
-    body.gptImageStyle = DEFAULT_GPT_IMAGE_ADVANCED_PARAMS.style;
-  }
   body.baseUrl = resolveConfiguredUpstreamBaseUrl(body.protocol);
-  // 模型参数由前端提供；上游地址始终使用服务端配置，避免客户端绕过。
+  // 开源版：不做模型级参数规范化，前端负责传递正确的参数，后端无条件透传
 }
 
 function createTask(body, req) {
   validateCreatePayload(body);
   const limitConfig = getLimitConfig();
-  if (isRejectNewTasksEnabled()) {
+  if (isShuttingDown || isRejectNewTasksEnabled()) {
     throw createHttpError(503, 'SERVER_NOT_ACCEPTING_TASKS', LIMIT_ERROR_MESSAGES.notAcceptingTasks, limitConfig.retryAfterSeconds);
   }
   const source = enforceRateLimit(req, body, limitConfig);
@@ -801,6 +877,7 @@ function createGptImageRequestInit(apiKey, request, resolvedSize, options = {}) 
   const prompt = request.prompt;
   const advancedParams = getGptImageRequestAdvancedParams(request);
   const stream = Boolean(options.stream);
+  const partialImages = Math.min(3, Math.max(0, Number(options.partialImages) || 0));
 
   if (request.mode === 'image-to-image') {
     const formData = new FormData();
@@ -809,11 +886,15 @@ function createGptImageRequestInit(apiKey, request, resolvedSize, options = {}) 
     formData.append('n', '1');
     if (stream) {
       formData.append('stream', 'true');
+      if (partialImages > 0) formData.append('partial_images', String(partialImages));
     }
     if (advancedParams) {
       formData.append('quality', advancedParams.quality);
       formData.append('background', advancedParams.background);
       formData.append('output_format', 'png');
+      if (advancedParams.style === 'vivid' || advancedParams.style === 'natural') {
+        formData.append('style', advancedParams.style);
+      }
     }
     if (resolvedSize) {
       formData.append('size', resolvedSize);
@@ -839,12 +920,13 @@ function createGptImageRequestInit(apiKey, request, resolvedSize, options = {}) 
   const payload = {
     prompt,
     model: request.model,
-    ...(stream ? { stream: true } : {}),
+    ...(stream ? { stream: true, ...(partialImages > 0 ? { partial_images: partialImages } : {}) } : {}),
     ...(resolvedSize ? { size: resolvedSize } : {}),
     ...(advancedParams ? {
       quality: advancedParams.quality,
       background: advancedParams.background,
       output_format: 'png',
+      ...(advancedParams.style === 'vivid' || advancedParams.style === 'natural' ? { style: advancedParams.style } : {}),
     } : {}),
     ...(request.images.length > 0 ? { image: request.images.map(img => `data:${img.mimeType};base64,${img.data}`) } : {}),
   };
@@ -1035,13 +1117,99 @@ function isImageStreamUnsupportedError(error) {
 }
 
 async function requestGptImage(apiKey, request, resolvedSize, options = {}) {
-  const baseUrl = options.baseUrl || resolveNovaApiBaseUrl();
+  const baseUrl = resolveConfiguredUpstreamBaseUrl('openai');
   const endpoint = request.mode === 'image-to-image'
     ? '/v1/images/edits'
     : '/v1/images/generations';
   const response = await fetchWithTimeout(
     `${baseUrl}${endpoint}`,
     createGptImageRequestInit(apiKey, request, resolvedSize, options)
+  );
+  return parseGptImageResponse(response);
+}
+
+function getGrokResolution(outputSize) {
+  if (outputSize === '2K' || outputSize === '2k') return '2k';
+  if (outputSize === '1K' || outputSize === '1k') return '1k';
+  return undefined;
+}
+
+function getGrokAspectRatio(aspectRatio) {
+  if (!aspectRatio || aspectRatio === 'auto') return undefined;
+  return String(aspectRatio);
+}
+
+function toGrokImageDataUrl(img) {
+  if (!img || typeof img !== 'object') return '';
+  if (typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:')) return img.dataUrl;
+  const mimeType = img.mimeType || 'image/png';
+  const data = typeof img.data === 'string' ? img.data : '';
+  if (!data) return '';
+  if (data.startsWith('data:')) return data;
+  return `data:${mimeType};base64,${data}`;
+}
+
+function createGrokImageRequestInit(apiKey, request, options = {}) {
+  const prompt = request.prompt;
+  const stream = Boolean(options.stream);
+  const aspectRatio = getGrokAspectRatio(request.aspectRatio);
+  const resolution = getGrokResolution(request.outputSize);
+  const images = Array.isArray(request.images) ? request.images : [];
+
+  if (request.mode === 'image-to-image') {
+    if (images.length === 0) {
+      throw new Error('图生图模式需要至少一张参考图');
+    }
+    const dataUrls = images.map(toGrokImageDataUrl).filter(Boolean);
+    if (dataUrls.length === 0) {
+      throw new Error('参考图数据无效');
+    }
+    const payload = {
+      model: request.model,
+      prompt,
+      response_format: 'url',
+      ...(stream ? { stream: true } : {}),
+      ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
+      ...(resolution ? { resolution } : {}),
+      ...(dataUrls.length === 1 ? { image: dataUrls[0] } : { images: dataUrls }),
+    };
+    return {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    };
+  }
+
+  const payload = {
+    model: request.model,
+    prompt,
+    response_format: 'url',
+    ...(stream ? { stream: true } : {}),
+    ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
+    ...(resolution ? { resolution } : {}),
+  };
+
+  return {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(payload),
+  };
+}
+
+async function requestGrokImage(apiKey, request, options = {}) {
+  const baseUrl = resolveConfiguredUpstreamBaseUrl('grok');
+  const endpoint = request.mode === 'image-to-image'
+    ? '/v1/images/edits'
+    : '/v1/images/generations';
+  const response = await fetchWithTimeout(
+    `${baseUrl}${endpoint}`,
+    createGrokImageRequestInit(apiKey, request, options)
   );
   return parseGptImageResponse(response);
 }
@@ -1081,7 +1249,24 @@ async function generateNovaImage(apiKey, request) {
   // 开源版：根据前端传入的 protocol 字段路由到对应的 API 协议
   const baseUrl = resolveConfiguredUpstreamBaseUrl(request.protocol);
   if (request.protocol === 'openai') {
-    return requestGptImage(apiKey, request, resolveGptImageRequestSize(request), { baseUrl });
+    const resolvedSize = resolveGptImageRequestSize(request);
+    if (!IMAGE_STREAM_ENABLED) {
+      return requestGptImage(apiKey, request, resolvedSize, { baseUrl });
+    }
+    try {
+      return await requestGptImage(apiKey, request, resolvedSize, {
+        baseUrl,
+        stream: true,
+        partialImages: IMAGE_STREAM_PARTIAL_IMAGES,
+      });
+    } catch (error) {
+      if (!isImageStreamUnsupportedError(error)) throw error;
+      console.warn('[image-stream] 上游不支持图片流式参数，回退非流式请求');
+      return requestGptImage(apiKey, request, resolvedSize, { baseUrl });
+    }
+  }
+  if (request.protocol === 'grok') {
+    return requestGrokImage(apiKey, request, { baseUrl });
   }
   // 默认走 Google Gemini 协议
   return generateNovaGeminiImage(apiKey, request, { baseUrl });
@@ -1095,7 +1280,7 @@ function extractGeminiImagePayload(data) {
 }
 
 async function generateNovaGeminiImage(apiKey, request, options = {}) {
-  const baseUrl = options.baseUrl || resolveNovaApiBaseUrl();
+  const baseUrl = resolveConfiguredUpstreamBaseUrl('google');
   const parts = [
     { text: request.prompt },
     ...request.images.map(img => ({ inlineData: { data: img.data, mimeType: img.mimeType } })),
@@ -1137,9 +1322,12 @@ function drainQueue() {
   const maxConcurrency = getMaxServerConcurrency();
   while (queue.length > 0) {
     const taskId = queue[0];
-    const task = db.prepare('SELECT request_json FROM tasks WHERE id = ?').get(taskId);
+    const task = db.prepare('SELECT mode, request_json FROM tasks WHERE id = ?').get(taskId);
     const req = task ? JSON.parse(task.request_json) : null;
-    const imageSlots = req?.parallelCount || 1;
+    const isPluginTask = task?.mode === 'plugin';
+    // 插件任务每个占 1 个名额，且名额从「开始跑」一直持有到「轮询出终态」，
+    // 避免几十个视频任务同时压在上游。
+    const imageSlots = isPluginTask ? 1 : (req?.parallelCount || 1);
 
     // 容量足够 → 放行。容量不足时唯一例外：当前空闲（activeCount===0）且该任务
     // 自身就超过总并发，允许其独占运行（否则永远无法被调度）；其余情况一律等待
@@ -1150,10 +1338,12 @@ function drainQueue() {
 
     queue.shift();
     activeCount += imageSlots;
-    runTask(taskId).finally(() => {
+    const runPromise = (isPluginTask ? runPluginTask(taskId) : runTask(taskId)).finally(() => {
       activeCount -= imageSlots;
+      runningTaskPromises.delete(runPromise);
       drainQueue();
     });
+    runningTaskPromises.add(runPromise);
   }
 }
 
@@ -1246,12 +1436,347 @@ async function runTask(taskId) {
   broadcastQueueStatus();
 }
 
+// ===== 插件任务 =====
+//
+// 这一段刻意不认识任何具体上游：模型清单、请求体、状态词表、结果路径全部来自
+// backend/plugins/<id>/ 下的 JSON。这里只做「落库 → 排队 → 创建上游任务 →
+// 轮询到终态 → 归一化产物」的生命周期，以及失败后的清理。
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 创建插件任务。以 queued 落库后进队列，由 drainQueue 按并发名额调度；
+ * 上游创建挪到 runPluginTask 里，这样名额从「开始跑」一直持有到「轮询出终态」。
+ */
+function createPluginTask(body, req) {
+  if (!body || typeof body !== 'object') throw new Error('请求体不能为空');
+  if (typeof body.apiKey !== 'string' || body.apiKey.trim().length === 0) throw new Error('缺少 API 密钥');
+
+  const plugin = pluginRegistry.getPlugin(body.pluginId);
+  if (!plugin) {
+    throw createHttpError(404, 'PLUGIN_NOT_FOUND', `插件 ${body.pluginId || ''} 未安装或加载失败`);
+  }
+
+  // 权威校验：前端也做同一套判断，但那只是为了即时反馈
+  let normalized;
+  try {
+    normalized = validateAndNormalizeInput(plugin, body);
+  } catch (error) {
+    if (error instanceof InputError) {
+      throw createHttpError(400, 'PLUGIN_INPUT_INVALID', error.message);
+    }
+    throw error;
+  }
+
+  const baseUrl = normalizeBaseUrl(body.baseUrl) || plugin.manifest.credential.defaultBaseUrl || '';
+  if (!baseUrl) {
+    throw new Error('缺少 API 基地址，请在设置中填写');
+  }
+  // 出网闸门在这里先跑一次：让「主机没申报」在提交那一刻就报错，而不是排到队首才失败
+  pluginExecutor.assertUrlAllowed(plugin, `${baseUrl}/`, 'API 基地址');
+
+  const limitConfig = getLimitConfig();
+  if (isRejectNewTasksEnabled()) {
+    throw createHttpError(503, 'SERVER_NOT_ACCEPTING_TASKS', LIMIT_ERROR_MESSAGES.notAcceptingTasks, limitConfig.retryAfterSeconds);
+  }
+  const source = enforceRateLimit(req, body, limitConfig);
+  enforceQueueCapacity(source, limitConfig);
+
+  const taskId = randomUUID();
+  const now = new Date().toISOString();
+  const requestForDb = {
+    mode: 'plugin',
+    pluginId: plugin.id,
+    pluginVersion: plugin.manifest.version,
+    model: normalized.model,
+    facets: normalized.facets,
+    fields: normalized.fields,
+    media: normalized.media,
+    baseUrl,
+  };
+
+  db.prepare(`
+    INSERT INTO tasks (id, status, mode, request_json, created_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    taskId,
+    TASK_STATUS.QUEUED,
+    'plugin',
+    JSON.stringify(requestForDb),
+    now,
+    new Date(Date.now() + TASK_TTL_MS).toISOString(),
+  );
+
+  // 素材绑定到任务：此后随任务一起清理，也不再参与去重复用
+  pluginMedia.bindToTask(taskId, normalized.mediaUrls);
+
+  // apiKey 只留在内存里，从不入库
+  apiKeys.set(taskId, body.apiKey);
+  taskSources.set(taskId, source);
+  if (source.ip) pendingCountByIp.set(source.ip, (pendingCountByIp.get(source.ip) || 0) + 1);
+  if (source.apiKeyHash) pendingCountByApiKeyHash.set(source.apiKeyHash, (pendingCountByApiKeyHash.get(source.apiKeyHash) || 0) + 1);
+
+  queue.push(taskId);
+  broadcastTask(taskId);
+  broadcastQueueStatus();
+  drainQueue();
+
+  return taskId;
+}
+
+/** 把插件任务标为失败，并立刻释放素材与图片占用的磁盘——失败任务没有任何产出值得保留。 */
+function failPluginTask(taskId, message) {
+  const completedAt = new Date().toISOString();
+  db.prepare(`
+    UPDATE tasks SET status = 'failed', error = ?, completed_at = ?, expires_at = ? WHERE id = ?
+  `).run(message, completedAt, new Date(Date.now() + TASK_TTL_MS).toISOString(), taskId);
+  pluginTaskCache.delete(taskId);
+  deleteTaskImageFiles(taskId);
+  pluginMedia.deleteTaskMedia(taskId);
+  cleanupTaskRuntimeState(taskId);
+  broadcastTask(taskId);
+  broadcastQueueStatus();
+}
+
+/** 缓存一份序列化结果，供前端 GET 在两次后端轮询之间直接命中。 */
+function cachePluginTaskResponse(taskId) {
+  const serialized = serializeTask(db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId));
+  pluginTaskCache.set(taskId, {
+    lastPolledAt: Date.now(),
+    cachedResponse: serialized,
+    inFlightPromise: null,
+  });
+  return serialized;
+}
+
+/**
+ * 向上游查一次状态并把终态写回库。返回归一化后的状态。
+ * 后端轮询循环与前端 GET 共用这一份逻辑，避免两处解析上游响应。
+ */
+async function pollPluginTaskOnce(taskId, plugin, context) {
+  const outcome = await pluginExecutor.pollTask(plugin, context);
+
+  // 请求本身失败时 pollTask 会回 processing 且不带 progress，这时保持上一次成功读数——
+  // 那是几秒前的真实值，比因为一次抖动就把进度条打回未知要好。
+  if (outcome.state !== 'processing' || outcome.progress !== undefined) {
+    pluginTaskProgress.set(taskId, {
+      progress: outcome.progress,
+      upstreamStatus: outcome.state,
+    });
+  }
+
+  if (outcome.state === 'completed') {
+    const completedAt = new Date().toISOString();
+    db.prepare("UPDATE tasks SET status = 'completed', result_json = ?, completed_at = ?, expires_at = ? WHERE id = ?")
+      .run(
+        JSON.stringify({ assets: outcome.assets }),
+        completedAt,
+        new Date(Date.now() + TASK_TTL_MS).toISOString(),
+        taskId,
+      );
+    cachePluginTaskResponse(taskId);
+    broadcastTask(taskId);
+    return 'completed';
+  }
+
+  if (outcome.state === 'failed') {
+    failPluginTask(taskId, outcome.error || '生成失败');
+    return 'failed';
+  }
+
+  cachePluginTaskResponse(taskId);
+  return outcome.state;
+}
+
+/**
+ * 插件任务的执行体：创建上游任务 → 轮询到终态。
+ * 超过 provider 申报的上限就认失败，避免上游卡死永久占着并发名额。
+ */
+async function runPluginTask(taskId) {
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+  const apiKey = apiKeys.get(taskId);
+  if (!task || !apiKey || ![TASK_STATUS.QUEUED, TASK_STATUS.LEGACY_QUEUED].includes(task.status)) {
+    cleanupTaskRuntimeState(taskId);
+    return;
+  }
+
+  const request = JSON.parse(task.request_json);
+  const plugin = pluginRegistry.getPlugin(request.pluginId);
+  if (!plugin) {
+    failPluginTask(taskId, `插件 ${request.pluginId} 已被移除，任务无法继续`);
+    return;
+  }
+
+  db.prepare("UPDATE tasks SET status = 'processing' WHERE id = ?").run(taskId);
+  broadcastTask(taskId);
+  broadcastQueueStatus();
+
+  const baseContext = {
+    plugin,
+    baseUrl: request.baseUrl,
+    apiKey,
+    model: request.model,
+    facets: request.facets,
+    fields: request.fields,
+    media: request.media,
+  };
+
+  let upstreamTaskId;
+  try {
+    const submitted = await pluginExecutor.submitTask(plugin, pluginExecutor.buildContext(baseContext));
+    upstreamTaskId = submitted.upstreamTaskId;
+
+    // 记下上游 ID：前端 GET 与后续轮询都要用
+    db.prepare('UPDATE tasks SET request_json = ? WHERE id = ?')
+      .run(JSON.stringify({ ...request, upstreamTaskId }), taskId);
+
+    // 少数上游在创建那一刻就直接返回成品，省掉一整轮轮询
+    if (submitted.immediate) {
+      const completedAt = new Date().toISOString();
+      db.prepare("UPDATE tasks SET status = 'completed', result_json = ?, completed_at = ?, expires_at = ? WHERE id = ?")
+        .run(
+          JSON.stringify({ assets: submitted.immediate.assets }),
+          completedAt,
+          new Date(Date.now() + TASK_TTL_MS).toISOString(),
+          taskId,
+        );
+      pluginTaskProgress.set(taskId, { progress: 100, upstreamStatus: 'completed' });
+      cachePluginTaskResponse(taskId);
+      cleanupTaskRuntimeState(taskId);
+      broadcastTask(taskId);
+      broadcastQueueStatus();
+      return;
+    }
+  } catch (error) {
+    failPluginTask(taskId, normalizePluginError(error));
+    return;
+  }
+
+  const { intervalMs, maxTotalMs } = pluginExecutor.resolvePollTiming(plugin);
+  const deadline = Date.now() + maxTotalMs;
+  const pollContext = pluginExecutor.buildContext({ ...baseContext, upstreamTaskId });
+
+  while (Date.now() < deadline) {
+    await sleep(intervalMs);
+
+    // 任务被删除 / 过期就别再轮询了
+    const stillThere = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskId);
+    if (!stillThere) {
+      pluginTaskCache.delete(taskId);
+      cleanupTaskRuntimeState(taskId);
+      return;
+    }
+    if (stillThere.status === 'completed' || stillThere.status === 'failed') {
+      cleanupTaskRuntimeState(taskId);
+      return;
+    }
+
+    try {
+      const state = await pollPluginTaskOnce(taskId, plugin, pollContext);
+      if (state === 'completed' || state === 'failed') {
+        cleanupTaskRuntimeState(taskId);
+        broadcastQueueStatus();
+        return;
+      }
+    } catch (error) {
+      // 单次轮询失败不判死刑，等下一轮；上游抖动很常见
+      console.warn(`[plugin-task] 轮询失败 taskId=${taskId}:`, error?.message || error);
+    }
+  }
+
+  failPluginTask(taskId, `生成超时（超过 ${Math.round(maxTotalMs / 60000)} 分钟仍未完成），请重试`);
+}
+
+/**
+ * 插件任务的错误归一化。不能直接用 normalizeError——它的超时分支写的是
+ * 「高分辨率图片生成需要更长时间」，套到视频任务上会给出误导性的提示。
+ */
+function normalizePluginError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/failed to fetch|fetch failed|networkerror|network request failed|load failed|econnreset|socket hang up|terminated/i.test(message)) {
+    return '连接上游失败，请检查服务器网络连接后重试。';
+  }
+  if (/abort|timeout|timed out/i.test(message)) {
+    return '上游创建任务超时，请稍后重试。';
+  }
+  return message.length > 200 ? `${message.slice(0, 200)}…` : message;
+}
+
+/**
+ * 前端 GET 用。状态推进由 runPluginTask 的后端轮询负责，这里只读库/缓存；
+ * 仅当任务已在跑但后端轮询还没写回时，才顺带补一次上游查询。
+ */
+async function getPluginTaskForClient(taskId) {
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+  if (!row) {
+    return { id: taskId, status: 'expired', error: '该任务已超出取回时间' };
+  }
+  if (row.status === 'completed' || row.status === 'failed') {
+    return serializeTask(row);
+  }
+
+  const request = parseJsonSafely(row.request_json) || {};
+  // 还没拿到上游 ID 说明仍在本地队列里排队，直接回当前状态
+  if (!request.upstreamTaskId) return serializeTask(row);
+
+  const plugin = pluginRegistry.getPlugin(request.pluginId);
+  const apiKey = apiKeys.get(taskId);
+  if (!plugin || !apiKey) return serializeTask(row);
+
+  const now = Date.now();
+  const cached = pluginTaskCache.get(taskId);
+  if (cached) {
+    if (cached.inFlightPromise) return cached.inFlightPromise;
+    if (now - cached.lastPolledAt < 5000 && cached.cachedResponse) return cached.cachedResponse;
+  }
+
+  const context = pluginExecutor.buildContext({
+    plugin,
+    baseUrl: request.baseUrl,
+    apiKey,
+    model: request.model,
+    facets: request.facets,
+    fields: request.fields,
+    media: request.media,
+    upstreamTaskId: request.upstreamTaskId,
+  });
+
+  const inFlightPromise = (async () => {
+    try {
+      await pollPluginTaskOnce(taskId, plugin, context);
+    } catch (error) {
+      console.warn(`[plugin-task] 前端触发的轮询失败 taskId=${taskId}:`, error?.message || error);
+    } finally {
+      const entry = pluginTaskCache.get(taskId);
+      if (entry) entry.inFlightPromise = null;
+    }
+    return serializeTask(db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId));
+  })();
+
+  if (cached) {
+    cached.inFlightPromise = inFlightPromise;
+  } else {
+    pluginTaskCache.set(taskId, {
+      lastPolledAt: now,
+      cachedResponse: serializeTask(row),
+      inFlightPromise,
+    });
+  }
+  return inFlightPromise;
+}
+
 function serializeTask(task) {
   if (!task) return null;
   if (task.expires_at && Date.parse(task.expires_at) <= Date.now()) {
     return { id: task.id, status: 'expired', error: '该任务已超出取回时间' };
   }
   const result = task.result_json ? JSON.parse(task.result_json) : undefined;
+  // 插件任务附带上游实时进度。status 仍是本机队列状态（排队中 = 等本机并发名额），
+  // upstreamStatus 才是上游那边的状态，两者不是一回事，都要给前端。
+  const live = task.mode === 'plugin' ? pluginTaskProgress.get(task.id) : undefined;
+  const pluginMeta = task.mode === 'plugin' ? readPluginTaskMeta(task) : undefined;
   return {
     id: task.id,
     status: task.status,
@@ -1262,11 +1787,28 @@ function serializeTask(task) {
     createdAt: task.created_at,
     completedAt: task.completed_at,
     expiresAt: task.expires_at,
+    ...(pluginMeta || {}),
+    ...(typeof live?.progress === 'number' ? { progress: live.progress } : {}),
+    ...(live?.upstreamStatus ? { upstreamStatus: live.upstreamStatus } : {}),
+  };
+}
+
+/** 从 request_json 里取出可以安全下发的插件元信息（不含 apiKey——它从不入库）。 */
+function readPluginTaskMeta(task) {
+  const request = parseJsonSafely(task.request_json);
+  if (!request) return {};
+  return {
+    pluginId: request.pluginId,
+    pluginVersion: request.pluginVersion,
+    model: request.model,
   };
 }
 
 function deleteTask(taskId) {
   deleteTaskImageFiles(taskId);
+  // 素材与任务绑定：任务清理即素材清理
+  pluginMedia.deleteTaskMedia(taskId);
+  pluginTaskCache.delete(taskId);
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM task_items WHERE task_id = ?').run(taskId);
     db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
@@ -1465,7 +2007,109 @@ function setupWebSocketServer() {
   return wss;
 }
 
-async function handleApi(req, res, pathname) {
+function closeHttpServer(server) {
+  if (!server || typeof server.close !== 'function') return Promise.resolve();
+  return new Promise(resolve => {
+    try {
+      server.close(() => resolve());
+    } catch {
+      resolve();
+    }
+  });
+}
+
+function closeWebSocketServer(wss) {
+  if (!wss || typeof wss.close !== 'function') return Promise.resolve();
+  for (const ws of wss.clients) {
+    try {
+      ws.close(1001, 'Server shutting down');
+    } catch {
+      // ignore
+    }
+  }
+  return new Promise(resolve => {
+    try {
+      wss.close(() => resolve());
+    } catch {
+      resolve();
+    }
+  });
+}
+
+async function waitForRunningTasks() {
+  const running = Array.from(runningTaskPromises);
+  if (running.length === 0) return;
+  await Promise.allSettled(running);
+}
+
+function checkpointTaskDatabase() {
+  try {
+    const result = db.pragma('wal_checkpoint(TRUNCATE)');
+    console.log('[shutdown] SQLite WAL checkpoint 完成', result);
+  } catch (error) {
+    console.warn('[shutdown] SQLite WAL checkpoint 失败', error?.message || error);
+  }
+}
+
+function closeTaskDatabase() {
+  try {
+    db.close();
+  } catch (error) {
+    console.warn('[shutdown] SQLite 关闭失败', error?.message || error);
+  }
+}
+
+function registerShutdownHandlers() {
+  const handleShutdownSignal = signal => {
+    if (shutdownPromise) return shutdownPromise;
+
+    shutdownPromise = (async () => {
+      isShuttingDown = true;
+      console.log(`[shutdown] 收到 ${signal}，开始优雅退出`);
+
+      await Promise.allSettled([
+        closeHttpServer(httpServerRef),
+        closeWebSocketServer(wsServerRef),
+      ]);
+
+      await waitForRunningTasks();
+      checkpointTaskDatabase();
+      closeTaskDatabase();
+      process.exit(0);
+    })().catch(error => {
+      console.error('[shutdown] 优雅退出失败', error);
+      closeTaskDatabase();
+      process.exit(1);
+    });
+
+    return shutdownPromise;
+  };
+
+  process.on('SIGTERM', () => {
+    void handleShutdownSignal('SIGTERM');
+  });
+
+  process.on('SIGINT', () => {
+    void handleShutdownSignal('SIGINT');
+  });
+}
+
+/**
+ * 前端已收妥结果，把 TTL 收到一个短宽限期即可回收。
+ * 内置任务与插件任务共用同一段逻辑。
+ */
+function ackTask(res, taskId) {
+  const ACK_GRACE_MS = 120 * 1000;
+  const existing = db.prepare('SELECT id FROM tasks WHERE id = ?').get(taskId);
+  if (existing) {
+    db.prepare('UPDATE tasks SET expires_at = ? WHERE id = ?').run(
+      new Date(Date.now() + ACK_GRACE_MS).toISOString(), taskId,
+    );
+  }
+  sendJson(res, 200, { ok: true });
+}
+
+async function handleApi(req, res, pathname, searchParams) {
   try {
     const apiPathname = pathname.replace(/\/+$/, '');
 
@@ -1585,13 +2229,70 @@ async function handleApi(req, res, pathname) {
       return true;
     }
 
+    // ===== 图片编辑代理（切图的 AI 透明化 / 背景补齐） =====
+    //
+    // 与 /api/nova/proxy/text 的差别：这里转发的是 multipart/form-data（含 image 与可选 mask
+    // 的二进制），所以**不解析请求体**，原样透传字节流，只替换鉴权头。
+    // 凭据走自定义头而不是表单字段，正是为了不必解析 multipart。
+    //
+    // 仅支持 openai 协议：/v1/images/edits 的 mask 语义只有它有，
+    // 前端已在模型选择器层过滤（见 isSliceCapableImageModel），这里再兜一次。
+    if (req.method === 'POST' && apiPathname === '/api/nova/proxy/image-edit') {
+      try {
+        const baseUrl = req.headers['x-nova-base-url'];
+        const apiKey = req.headers['x-nova-api-key'];
+        if (!baseUrl || !apiKey) {
+          sendJson(res, 400, { error: 'Missing x-nova-base-url or x-nova-api-key' });
+          return true;
+        }
+
+        const contentType = String(req.headers['content-type'] || '');
+        if (!contentType.toLowerCase().includes('multipart/form-data')) {
+          sendJson(res, 400, { error: '图片编辑代理只接受 multipart/form-data' });
+          return true;
+        }
+
+        const rawBody = await readRawBody(req, MAX_IMAGE_EDIT_BODY_BYTES);
+        const normalizedBaseUrl = resolveConfiguredUpstreamBaseUrl('openai');
+
+        const upstream = await fetchWithTimeout(`${normalizedBaseUrl}/v1/images/edits`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': contentType,
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: rawBody,
+        });
+
+        // 响应可能是 JSON（b64_json / url）也可能是图片字节，一律按原样回传，
+        // 由前端的 readImageResponse 统一判别。
+        const upstreamType = upstream.headers.get('content-type') || 'application/json';
+        const buffer = Buffer.from(await upstream.arrayBuffer());
+        res.writeHead(upstream.status, {
+          'Content-Type': upstreamType,
+          'Content-Length': buffer.length,
+          'Cache-Control': 'no-store',
+        });
+        res.end(buffer);
+      } catch (error) {
+        if (error && error.statusCode === 413) {
+          sendJson(res, 413, { error: error.message });
+        } else if (error && error.message && /abort|timeout/i.test(error.message)) {
+          sendJson(res, 504, { error: '图片编辑请求上游超时' });
+        } else {
+          sendJson(res, 502, { error: normalizeError(error) });
+        }
+      }
+      return true;
+    }
+
     // ===== 文本 AI 代理（流式 + 非流式，多文本协议） =====
     if (req.method === 'POST' && apiPathname === '/api/nova/proxy/text') {
       try {
         const body = await readJsonBody(req);
-        const { protocol, apiKey, model, stream, requestBody } = body;
-        if (!apiKey) {
-          sendJson(res, 400, { error: 'Missing apiKey' });
+        const { protocol, baseUrl, apiKey, model, stream, requestBody } = body;
+        if (!baseUrl || !apiKey) {
+          sendJson(res, 400, { error: 'Missing baseUrl or apiKey' });
           return true;
         }
 
@@ -1678,10 +2379,11 @@ async function handleApi(req, res, pathname) {
     if (req.method === 'GET' && apiPathname === '/api/nova/proxy/models') {
       try {
         const parsed = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+        const baseUrl = parsed.searchParams.get('baseUrl');
         const apiKey = parsed.searchParams.get('apiKey');
         const protocol = parsed.searchParams.get('protocol') || 'openai';
-        if (!apiKey) {
-          sendJson(res, 400, { error: 'Missing apiKey' });
+        if (!baseUrl || !apiKey) {
+          sendJson(res, 400, { error: 'Missing baseUrl or apiKey' });
           return true;
         }
 
@@ -1717,6 +2419,62 @@ async function handleApi(req, res, pathname) {
       return true;
     }
 
+    // ===== 视频插件 =====
+
+    if (req.method === 'GET' && apiPathname === '/api/nova/plugins') {
+      // ?reload=1 重新扫描插件目录，供管理员放完插件后免重启生效。
+      // 代价只是读几个小 JSON 文件，因此不额外设限。
+      if (searchParams?.get('reload') === '1') pluginRegistry.reload();
+      sendJson(res, 200, {
+        ...pluginRegistry.describeRegistryForClient(),
+        mediaLimits: pluginMedia.getLimitsForClient(),
+      });
+      return true;
+    }
+
+    if (req.method === 'POST' && apiPathname === '/api/nova/plugin-media') {
+      const pluginId = String(searchParams?.get('pluginId') || '');
+      const kind = String(searchParams?.get('kind') || 'images');
+      const plugin = pluginRegistry.getPlugin(pluginId);
+      if (!plugin) {
+        throw createHttpError(404, 'PLUGIN_NOT_FOUND', `插件 ${pluginId} 未安装或加载失败`);
+      }
+      const uploaded = await pluginMedia.handleUpload(req, kind, plugin);
+      sendJson(res, 200, uploaded);
+      return true;
+    }
+
+    // 素材回读：上游要匿名拉取，所以这里不鉴权（文件名是随机 UUID）
+    const pluginMediaMatch = apiPathname.match(/^\/api\/nova\/plugin-media\/([^/]+)$/);
+    if (pluginMediaMatch && (req.method === 'GET' || req.method === 'HEAD')) {
+      pluginMedia.serveFile(res, decodeURIComponent(pluginMediaMatch[1]));
+      return true;
+    }
+
+    if (req.method === 'POST' && apiPathname === '/api/nova/plugin-tasks') {
+      const body = await readJsonBody(req);
+      const taskId = createPluginTask(body, req);
+      sendJson(res, 202, { taskId });
+      return true;
+    }
+
+    const pluginTaskMatch = apiPathname.match(/^\/api\/nova\/plugin-tasks\/([^/]+)(?:\/(ack))?$/);
+    if (pluginTaskMatch) {
+      const pluginTaskId = decodeURIComponent(pluginTaskMatch[1]);
+      const pluginAction = pluginTaskMatch[2];
+
+      if (req.method === 'GET' && !pluginAction) {
+        const task = await getPluginTaskForClient(pluginTaskId);
+        sendJson(res, task ? 200 : 404, task || { id: pluginTaskId, status: 'expired', error: '该任务已超出取回时间' });
+        return true;
+      }
+
+      if (req.method === 'POST' && pluginAction === 'ack') {
+        ackTask(res, pluginTaskId);
+        return true;
+      }
+    }
+
     const match = apiPathname.match(/^\/api\/nova\/tasks\/([^/]+)(?:\/(ack))?$/);
     if (!match) return false;
     const taskId = decodeURIComponent(match[1]);
@@ -1729,14 +2487,7 @@ async function handleApi(req, res, pathname) {
     }
 
     if (req.method === 'POST' && action === 'ack') {
-      const ACK_GRACE_MS = 120 * 1000;
-      const existing = db.prepare('SELECT id FROM tasks WHERE id = ?').get(taskId);
-      if (existing) {
-        db.prepare('UPDATE tasks SET expires_at = ? WHERE id = ?').run(
-          new Date(Date.now() + ACK_GRACE_MS).toISOString(), taskId
-        );
-      }
-      sendJson(res, 200, { ok: true });
+      ackTask(res, taskId);
       return true;
     }
 
@@ -1757,7 +2508,11 @@ async function handleApi(req, res, pathname) {
 initDatabase();
 ensureImageDir();
 cleanupExpiredTasks();
+pluginMedia.cleanupExpired();
+// 启动时把插件扫一遍：加载成功/失败都会打日志，管理员放错文件时立刻能看到
+pluginRegistry.listPlugins();
 setInterval(cleanupExpiredTasks, CLEANUP_INTERVAL_MS).unref();
+setInterval(() => pluginMedia.cleanupExpired(), CLEANUP_INTERVAL_MS).unref();
 setInterval(cleanupRateLimitBuckets, CLEANUP_INTERVAL_MS).unref();
 
 const startServer = () => {
@@ -1765,7 +2520,7 @@ const startServer = () => {
   const httpServer = http.createServer(async (req, res) => {
     const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || `${HOSTNAME}:${PORT}`}`);
     if (parsedUrl.pathname?.startsWith('/api/nova/')) {
-      const handled = await handleApi(req, res, parsedUrl.pathname);
+      const handled = await handleApi(req, res, parsedUrl.pathname, parsedUrl.searchParams);
       if (handled || res.headersSent || res.writableEnded) return;
     }
     if (!IS_DEV) {
@@ -1808,7 +2563,12 @@ const startServer = () => {
       console.log(`Listening on ${listenUrl}`);
     }
   });
+
+  wsServerRef = wss;
+  httpServerRef = httpServer;
 };
+
+registerShutdownHandlers();
 
 if (IS_DEV) {
   app.prepare().then(startServer);

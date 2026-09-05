@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ackNovaTask, createNovaTask, resolveImageTaskProvider, type NovaTaskResponse } from '@/lib/ccode-task-client';
 import { downloadAndStoreImages } from '@/lib/image-downloader';
+import { syncDynamicModelExports } from '@/lib/gemini-config';
 import type { StoredJob } from '@/lib/job-store';
+import { saveRegistry } from '@/lib/nova-models';
 import {
   finalizeCompletedServerTask,
   submitTextToImage,
@@ -76,14 +78,15 @@ function createActions(initialJob: StoredJob): { actions: SubmitActions; getJob:
 }
 
 beforeEach(() => {
-  localStorage.setItem('nova-model-registry', JSON.stringify({
+  localStorage.clear();
+  saveRegistry({
     imageModels: [{
       id: 'gpt-image-2',
       protocol: 'openai',
       name: 'GPT Image 2',
       modelId: 'gpt-image-2',
       apiKey: 'test-api-key',
-      baseUrl: 'https://api.itoo.me',
+      baseUrl: 'https://api.openai.com',
       builtinPreset: 'gpt-image-2',
       maxRefImages: 16,
       maxOutputSize: '4K',
@@ -97,8 +100,12 @@ beforeEach(() => {
       agent: '',
       promptOptimize: '',
       imageDescribe: '',
+      sliceDecomposition: '',
+      sliceReconstruct: '',
+      sliceImageEdit: '',
     },
-  }));
+  });
+  syncDynamicModelExports();
   mockedAckNovaTask.mockReset();
   mockedAckNovaTask.mockResolvedValue(undefined);
   mockedCreateNovaTask.mockReset();
@@ -107,14 +114,14 @@ beforeEach(() => {
   mockedResolveImageTaskProvider.mockReset();
   mockedResolveImageTaskProvider.mockReturnValue({
     apiKey: 'test-api-key',
-    baseUrl: 'https://api.itoo.me',
+    baseUrl: 'https://api.openai.com',
     protocol: 'openai',
     modelId: 'gpt-image-2',
   });
 });
 
 describe('submitTextToImage', () => {
-  it('forces unsupported GPT Image style to auto before creating a task', async () => {
+  it('passes GPT Image advanced params into createNovaTask payload', async () => {
     const job = makeJob();
     const { actions, getJob } = createActions(job);
 
@@ -135,12 +142,12 @@ describe('submitTextToImage', () => {
       mode: 'text-to-image',
       model: 'gpt-image-2',
       gptImageQuality: 'high',
-      gptImageStyle: 'auto',
+      gptImageStyle: 'vivid',
       gptImageBackground: 'transparent',
     }));
     expect(actions.addJob).toHaveBeenCalledWith(expect.objectContaining({
       gptImageQuality: 'high',
-      gptImageStyle: 'auto',
+      gptImageStyle: 'vivid',
       gptImageBackground: 'transparent',
     }));
     expect(getJob().serverTaskId).toBe('task-advanced-1');

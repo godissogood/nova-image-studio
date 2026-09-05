@@ -7,14 +7,17 @@ import {
 } from '@/lib/nova-text-protocol';
 import { ITOO_API_BASE_URL } from '@/lib/itoo-config';
 
-export type ProviderProtocol = 'google' | 'openai';
+export type ProviderProtocol = 'google' | 'openai' | 'grok';
 export type ImageOutputSize = '512' | '1K' | '2K' | '4K';
 export type BuiltinImagePresetId =
   | 'gemini-2.5-flash-image'
   | 'gemini-3-pro-image-preview'
   | 'gemini-3.1-flash-image-preview'
   | 'gemini-3.1-flash-lite-image'
-  | 'gpt-image-2';
+  | 'gpt-image-2'
+  | 'grok-imagine-image'
+  | 'grok-imagine-image-quality'
+  | 'grok-imagine-image-edit';
 
 export interface ImageModelConfig {
   id: string;
@@ -57,7 +60,32 @@ export interface DefaultModels {
   agent: string;
   promptOptimize: string;
   imageDescribe: string;
+  /** 图片切图的 AI 拆图（视觉定位切片与背景候选） */
+  sliceDecomposition: string;
+  /** 网页复刻 agent（多轮工具调用生成 HTML/CSS/JS） */
+  sliceReconstruct: string;
+  /**
+   * 切图的图片编辑能力（AI 透明化、背景补齐）。
+   * 与 textToImage / imageToImage 分开配置，因为这两项要求上游支持
+   * 带 mask 的 /v1/images/edits，只有 openai 协议的模型满足（见 isSliceCapableImageModel）。
+   */
+  sliceImageEdit: string;
 }
+
+/** 文本类默认模型的 task key。 */
+export type TextDefaultTask = keyof Pick<
+  DefaultModels,
+  'reversePrompt' | 'agent' | 'promptOptimize' | 'imageDescribe' | 'sliceDecomposition' | 'sliceReconstruct'
+>;
+
+const TEXT_DEFAULT_TASKS: TextDefaultTask[] = [
+  'reversePrompt',
+  'agent',
+  'promptOptimize',
+  'imageDescribe',
+  'sliceDecomposition',
+  'sliceReconstruct',
+];
 
 export interface NovaModelRegistry {
   imageModels: ImageModelConfig[];
@@ -118,6 +146,36 @@ export const BUILTIN_IMAGE_PRESETS: Record<BuiltinImagePresetId, BuiltinImagePre
     maxOutputSize: '4K',
     supportsAdvancedParams: true,
   },
+  'grok-imagine-image': {
+    id: 'grok-imagine-image',
+    protocol: 'grok',
+    name: 'Grok Imagine',
+    modelId: 'grok-imagine-image',
+    baseUrl: ITOO_API_BASE_URL,
+    maxRefImages: 0,
+    maxOutputSize: '1K',
+    supportsAdvancedParams: false,
+  },
+  'grok-imagine-image-quality': {
+    id: 'grok-imagine-image-quality',
+    protocol: 'grok',
+    name: 'Grok Imagine Quality',
+    modelId: 'grok-imagine-image-quality',
+    baseUrl: ITOO_API_BASE_URL,
+    maxRefImages: 0,
+    maxOutputSize: '2K',
+    supportsAdvancedParams: false,
+  },
+  'grok-imagine-image-edit': {
+    id: 'grok-imagine-image-edit',
+    protocol: 'grok',
+    name: 'Grok Imagine Edit',
+    modelId: 'grok-imagine-image-edit',
+    baseUrl: ITOO_API_BASE_URL,
+    maxRefImages: 4,
+    maxOutputSize: '2K',
+    supportsAdvancedParams: false,
+  },
 };
 
 export const BUILTIN_IMAGE_PRESET_OPTIONS = Object.values(BUILTIN_IMAGE_PRESETS).map((preset) => ({
@@ -167,10 +225,13 @@ export const DEFAULT_DEFAULTS: DefaultModels = {
   agent: '',
   promptOptimize: '',
   imageDescribe: '',
+  sliceDecomposition: '',
+  sliceReconstruct: '',
+  sliceImageEdit: '',
 };
 
 function isProviderProtocol(value: unknown): value is ProviderProtocol {
-  return value === 'google' || value === 'openai';
+  return value === 'google' || value === 'openai' || value === 'grok';
 }
 
 function isBuiltinImagePresetId(value: unknown): value is BuiltinImagePresetId {
@@ -186,7 +247,9 @@ function normalizeImageOutputSize(value: unknown, fallback: ImageOutputSize): Im
 function inferBuiltinPresetId(raw: Partial<ImageModelConfig>): BuiltinImagePresetId {
   const candidate = raw.builtinPreset || raw.id || raw.modelId;
   if (isBuiltinImagePresetId(candidate)) return candidate;
-  if (String(raw.protocol || '').trim() === 'google') return 'gemini-3-pro-image-preview';
+  const protocol = String(raw.protocol || '').trim();
+  if (protocol === 'google') return 'gemini-3-pro-image-preview';
+  if (protocol === 'grok') return 'grok-imagine-image';
   return 'gpt-image-2';
 }
 
@@ -205,8 +268,8 @@ function normalizeImageModelConfig(raw: Partial<ImageModelConfig>): ImageModelCo
     apiKey: String(raw.apiKey || '').trim(),
     baseUrl: ITOO_API_BASE_URL,
     builtinPreset: presetId,
-    maxRefImages: Number.isFinite(raw.maxRefImages) && Number(raw.maxRefImages) > 0
-      ? Math.max(1, Math.floor(Number(raw.maxRefImages)))
+    maxRefImages: Number.isFinite(raw.maxRefImages) && Number(raw.maxRefImages) >= 0
+      ? Math.max(0, Math.floor(Number(raw.maxRefImages)))
       : preset.maxRefImages,
     maxOutputSize: normalizeImageOutputSize(raw.maxOutputSize, preset.maxOutputSize),
     supportsAdvancedParams: protocol === 'openai'
@@ -276,12 +339,35 @@ function ensureDefaults(raw: Partial<DefaultModels> | undefined, imageModels: Im
 
   if (!completeImageModels.some((model) => model.id === next.textToImage)) next.textToImage = firstImageModelId;
   if (!completeImageModels.some((model) => model.id === next.imageToImage)) next.imageToImage = firstImageModelId;
-  if (!completeTextModels.some((model) => model.id === next.reversePrompt)) next.reversePrompt = firstTextModelId;
-  if (!completeTextModels.some((model) => model.id === next.agent)) next.agent = firstTextModelId;
-  if (!completeTextModels.some((model) => model.id === next.promptOptimize)) next.promptOptimize = firstTextModelId;
-  if (!completeTextModels.some((model) => model.id === next.imageDescribe)) next.imageDescribe = firstTextModelId;
+  for (const task of TEXT_DEFAULT_TASKS) {
+    if (!completeTextModels.some((model) => model.id === next[task])) next[task] = firstTextModelId;
+  }
+
+  // 切图的图片编辑只能落在支持带 mask 编辑的模型上；没有这类模型时留空，
+  // 由 UI 提示用户去添加，而不是硬塞一个注定 400 的模型。
+  const sliceCapable = completeImageModels.filter(isSliceCapableImageModel);
+  if (!sliceCapable.some((model) => model.id === next.sliceImageEdit)) {
+    next.sliceImageEdit = sliceCapable[0]?.id || '';
+  }
 
   return next;
+}
+
+/**
+ * 该图片模型能否用于切图的图片编辑（AI 透明化 / 背景补齐）。
+ *
+ * 这两项都要打 `/v1/images/edits`，并且背景补齐还要传 `mask`。
+ * 只有 openai 协议的模型有这个端点：Gemini 走 generateContent 没有 mask 语义，
+ * Grok 的 edits 也不接受 mask 参数。所以在选择器层就把它们过滤掉，
+ * 而不是等请求 400 才告诉用户。
+ */
+export function isSliceCapableImageModel(model: ImageModelConfig): boolean {
+  return model.protocol === 'openai';
+}
+
+/** 可用于切图图片编辑的模型列表。 */
+export function getSliceCapableImageModels(registry: NovaModelRegistry): ImageModelConfig[] {
+  return getCompleteImageModels(registry).filter(isSliceCapableImageModel);
 }
 
 function getInitialRegistry(): NovaModelRegistry {
@@ -333,14 +419,14 @@ export function getTextModelById(registry: NovaModelRegistry, id: string): TextM
 
 export function getDefaultImageModel(
   registry: NovaModelRegistry,
-  task: keyof Pick<DefaultModels, 'textToImage' | 'imageToImage'>,
+  task: keyof Pick<DefaultModels, 'textToImage' | 'imageToImage' | 'sliceImageEdit'>,
 ): ImageModelConfig | undefined {
   return getImageModelById(registry, registry.defaults[task]);
 }
 
 export function getDefaultTextModel(
   registry: NovaModelRegistry,
-  task: keyof Pick<DefaultModels, 'reversePrompt' | 'agent' | 'promptOptimize' | 'imageDescribe'>,
+  task: TextDefaultTask,
 ): TextModelConfig | undefined {
   return getTextModelById(registry, registry.defaults[task]);
 }

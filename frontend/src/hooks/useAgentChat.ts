@@ -1,14 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useApiKeyStatus } from '@/hooks/useApiKeyStatus';
-import { useModelRegistryRevision } from '@/hooks/useModelRegistryRevision';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { hasAnyApiKey } from '@/lib/settings-storage';
 import { generateUUID } from '@/lib/uuid';
 import { createNovaTask, getNovaTask, resolveImageTaskProvider, type ImageReference } from '@/lib/ccode-task-client';
 import { fetchImageAsBlob } from '@/lib/image-downloader';
 import {
   getGptImageAdvancedParamsForModel,
-  normalizeModel,
   resolveAgentModel,
   type AgentModelCatalogEntry,
   type AgentResolvedLayout,
@@ -21,6 +19,7 @@ import {
   type StreamAgentHandle,
 } from '@/lib/agent-chat-client';
 import {
+  AGENT_DEFAULT_IMAGE_MODEL_FALLBACK,
   type AgentMessage,
   type AgentImageRecord,
   type AgentProposal,
@@ -176,15 +175,14 @@ async function resultImageToBlob(ref: string): Promise<Blob> {
 
 export function useAgentChat() {
   const [ready, setReady] = useState(false);
-  const [hasApiKey] = useApiKeyStatus();
+  const [hasApiKey] = useState(() => hasAnyApiKey());
   const [phase, setPhase] = useState<AgentPhase>('idle');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [images, setImages] = useState<AgentImageRecord[]>([]);
   const [proposal, setProposal] = useState<AgentProposal | null>(null);
   const [streamingText, setStreamingText] = useState('');
   const [streamingReasoning, setStreamingReasoning] = useState('');
-  const [imageModel, setImageModelState] = useState<ModelId>('');
-  const modelRegistryRevision = useModelRegistryRevision();
+  const [imageModel, setImageModelState] = useState<ModelId>(AGENT_DEFAULT_IMAGE_MODEL_FALLBACK);
   const [error, setError] = useState<string | null>(null);
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [generatingStartedAt, setGeneratingStartedAt] = useState<number | null>(null);
@@ -210,7 +208,6 @@ export function useAgentChat() {
   const isReeditRef = useRef(false);
   /** 保存当前提案引用，生图完成后若 state proposal 已被清除时仍可获取 reason 等字段 */
   const proposalRef = useRef<AgentProposal | null>(null);
-
   /** 镜像 imageModel state，供 runChat 回调中同步读取 */
   const imageModelRef = useRef(imageModel);
   useEffect(() => { imageModelRef.current = imageModel; }, [imageModel]);
@@ -280,10 +277,7 @@ export function useAgentChat() {
       setMessages(session.messages);
       setImages(session.images);
       seqRef.current = session.images.reduce((max, img) => Math.max(max, parseImgSeq(img.imgId)), 0);
-      const restoredImageModel = normalizeModel(session.imageModel || undefined, 'textToImage');
-      imageModelRef.current = restoredImageModel;
-      setImageModelState(restoredImageModel);
-      if (restoredImageModel !== session.imageModel) void saveImageModel(restoredImageModel);
+      if (session.imageModel) setImageModelState(session.imageModel as ModelId);
 
       if (pending) {
         // 恢复待确认的提案，使用户刷新后仍可看到「等待你确认」卡片
@@ -319,15 +313,6 @@ export function useAgentChat() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (!ready) return;
-    const configuredModel = normalizeModel(imageModelRef.current, 'textToImage');
-    if (configuredModel === imageModelRef.current) return;
-    imageModelRef.current = configuredModel;
-    setImageModelState(configuredModel);
-    void saveImageModel(configuredModel);
-  }, [modelRegistryRevision, ready]);
 
   const appendMessage = useCallback((message: AgentMessage) => {
     setMessages(prev => [...prev, message]);
@@ -454,9 +439,8 @@ export function useAgentChat() {
           const reasoning = reasoningBuf.trim();
           if (parsedProposal) {
             // 模型自动选择：Agent 指定模型 id 或用户要求分辨率档位时自动切换
-            const configuredModel = normalizeModel(imageModelRef.current, 'textToImage');
             const resolvedModel = resolveAgentModel(
-              configuredModel,
+              imageModelRef.current,
               parsedProposal.requestedModelId,
               parsedProposal.requestedOutputSize,
               modelCatalog,
@@ -850,14 +834,7 @@ export function useAgentChat() {
         if (bytes) references.push({ data: bytes.data, mimeType: bytes.mimeType });
       }
       const mode = references.length > 0 ? 'image-to-image' : 'text-to-image';
-      const configuredModel = normalizeModel(model, mode === 'image-to-image' ? 'imageToImage' : 'textToImage');
-      if (!configuredModel) throw new Error('请先配置可用的图片模型');
-      if (configuredModel !== imageModelRef.current) {
-        imageModelRef.current = configuredModel;
-        setImageModelState(configuredModel);
-        void saveImageModel(configuredModel);
-      }
-      const provider = resolveImageTaskProvider(configuredModel);
+      const provider = resolveImageTaskProvider(model);
 
       const taskId = await createNovaTask({
         apiKey: provider.apiKey,
@@ -884,7 +861,7 @@ export function useAgentChat() {
         pendingAnalysis: pendingAnalysisRef.current,
         pendingReasoning: pendingReasoningRef.current,
         selectedImageIds,
-        model: configuredModel,
+        model,
         outputSize: params.outputSize,
         customSize: params.customSize,
         aspectRatio: params.aspectRatio,
@@ -909,7 +886,7 @@ export function useAgentChat() {
           action: selectedImageIds.length > 0 ? 'edit' : 'generate',
           prompt,
           referencedImageIds: selectedImageIds,
-          model: configuredModel,
+          model,
           outputSize: params.outputSize,
           customSize: params.customSize,
           aspectRatio: params.aspectRatio,
@@ -970,11 +947,8 @@ export function useAgentChat() {
   }, []);
 
   const setImageModel = useCallback((model: ModelId) => {
-    const configuredModel = normalizeModel(model, 'textToImage');
-    if (!configuredModel) return;
-    imageModelRef.current = configuredModel;
-    setImageModelState(configuredModel);
-    void saveImageModel(configuredModel);
+    setImageModelState(model);
+    void saveImageModel(model);
   }, []);
 
   const toggleWebSearch = useCallback(() => {
@@ -1130,6 +1104,62 @@ export function useAgentChat() {
     if (phase !== 'idle') setPhase('idle');
   }, [messages, phase, cleanupOrphanImages, flushAndCancelRaf]);
 
+  /**
+   * 最后一条用户消息的 id；不存在或其后还有别的用户消息时为 null。
+   *
+   * 重试**只允许**作用于它，这是刻意的限制：重试中间某轮意味着要丢弃它之后
+   * 的全部对话，否则模型会看到「同一个问题两个不同答案」的历史而错乱。
+   * 与其偷偷替用户删掉后面几轮，不如只在最后一轮给出重试入口 ——
+   * 想改中间某轮，用现成的「撤回以下所有」把尾巴清掉再重试。
+   */
+  const retryableMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role === 'user') return message.id;
+      // 分隔线之后没有用户消息 → 没有可重试的一轮
+      if (message.role === 'context-divider') return null;
+    }
+    return null;
+  }, [messages]);
+
+  /**
+   * 重试最后一条用户消息：删掉它之后的助手回复，用同一条用户消息重新发起请求。
+   *
+   * 用户消息本身**保留**（不重新登记图片、不重算描述），只回滚模型侧产物。
+   * 因此关联图片一律不清理 —— 它们仍被那条保留下来的用户消息引用。
+   */
+  const retryMessage = useCallback((messageId: string) => {
+    if (phase !== 'idle') return;
+    const index = messages.findIndex(m => m.id === messageId);
+    if (index === -1) return;
+    const target = messages[index];
+    if (target.role !== 'user' || messageId !== retryableMessageId) return;
+
+    // 丢弃这条用户消息之后的所有内容（助手回复、系统提示、提案分析）
+    const toRemove = messages.slice(index + 1);
+    const kept = messages.slice(0, index + 1);
+    if (toRemove.length > 0) {
+      setMessages(kept);
+      void deleteMessages(toRemove.map(m => m.id));
+      // 只清理「被删除消息引用、且保留部分不再引用」的图片。
+      // 用户消息还在，它引用的上传图不会被误删。
+      cleanupOrphanImages(kept, toRemove.flatMap(m => m.imageIds || []));
+    }
+
+    pendingAnalysisRef.current = '';
+    pendingReasoningRef.current = '';
+    isReeditRef.current = false;
+    setProposal(null);
+    void clearPendingProposal();
+    flushAndCancelRaf();
+    setStreamingText('');
+    setStreamingReasoning('');
+    setError(null);
+
+    const { history, catalog } = sliceActiveContext(kept, images);
+    runChat(history, catalog);
+  }, [phase, messages, retryableMessageId, images, cleanupOrphanImages, flushAndCancelRaf, runChat]);
+
   // 组件卸载时清理：取消 rAF + 停止轮询/流式/描述，避免卸载后仍每 4s 轮询、
   // 在卸载后继续下载/写库/setState（内存泄漏 + 卸载后写状态）。
   useEffect(() => {
@@ -1171,6 +1201,8 @@ export function useAgentChat() {
     withdrawTurn,
     deleteMessage,
     rollbackMessages,
+    retryMessage,
+    retryableMessageId,
     checkNow,
     stopStreaming,
     skipDescribing,

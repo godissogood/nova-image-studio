@@ -5,10 +5,12 @@ import {
   CheckCircle2,
   Database,
   Download,
+  ExternalLink,
   Eye,
   EyeOff,
   ImageIcon,
   Info,
+  Package,
   Plus,
   RefreshCw,
   Save,
@@ -26,6 +28,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PluginsSettings } from '@/components/settings/PluginsSettings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -41,6 +44,7 @@ import {
   getCompleteImageModels,
   getCompleteTextModels,
   getImageModelOutputSizes,
+  isSliceCapableImageModel,
   loadRegistry,
   saveRegistry,
   type DefaultModels,
@@ -57,12 +61,18 @@ import { syncDynamicModelExports } from '@/lib/gemini-config';
 import { exportAllData, importAllData, downloadBlob, generateBackupFilename, type BackupProgress as BackupProgressType } from '@/lib/backup-utils';
 import { checkModelsAvailability, type ModelStatus } from '@/lib/ccode-task-client';
 import { hasAnyApiKey } from '@/lib/settings-storage';
-import { DEFAULT_IMAGE_MODEL_ID, DEFAULT_TEXT_MODEL_ID } from '@/lib/itoo-config';
+import { BA_RANDOM_URL, BING_WALLPAPER_URL } from '@/lib/constants';
+import { PROMPT_DATA_SOURCES, getPromptSourceLabel } from '@/lib/prompt-gallery-data';
+
+/** 设置弹层的页签。调用方可以指定打开时落在哪一页。 */
+export type SettingsTab = 'models' | 'plugins' | 'backup' | 'about';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onApiKeyChange?: (hasKey: boolean) => void;
+  /** 打开时默认停在哪一页，缺省「模型配置」 */
+  initialTab?: SettingsTab;
 }
 
 function cloneImageModel(model: ImageModelConfig): ImageModelConfig {
@@ -79,7 +89,7 @@ function createImageModelDraft(): ImageModelConfig {
     id: generateModelId('img'),
     protocol: preset.protocol,
     name: '',
-    modelId: DEFAULT_IMAGE_MODEL_ID,
+    modelId: '',
     apiKey: '',
     baseUrl: preset.baseUrl,
     builtinPreset: preset.id,
@@ -95,7 +105,7 @@ function createTextModelDraft(): TextModelConfig {
     id: generateModelId('txt'),
     protocol: template.protocol,
     name: '',
-    modelId: DEFAULT_TEXT_MODEL_ID,
+    modelId: '',
     apiKey: '',
     baseUrl: template.baseUrl,
     note: template.note,
@@ -125,6 +135,7 @@ function normalizeDefaults(
 ): DefaultModels {
   const completeImageModels = imageModels.filter(isCompleteImageModel);
   const completeTextModels = textModels.filter(isCompleteTextModel);
+  const sliceCapableImageModels = completeImageModels.filter(isSliceCapableImageModel);
   const firstImageModelId = completeImageModels[0]?.id || '';
   const firstTextModelId = completeTextModels[0]?.id || '';
 
@@ -135,10 +146,25 @@ function normalizeDefaults(
     agent: completeTextModels.some((model) => model.id === defaults.agent) ? defaults.agent : firstTextModelId,
     promptOptimize: completeTextModels.some((model) => model.id === defaults.promptOptimize) ? defaults.promptOptimize : firstTextModelId,
     imageDescribe: completeTextModels.some((model) => model.id === defaults.imageDescribe) ? defaults.imageDescribe : firstTextModelId,
+    sliceDecomposition: completeTextModels.some((model) => model.id === defaults.sliceDecomposition) ? defaults.sliceDecomposition : firstTextModelId,
+    sliceReconstruct: completeTextModels.some((model) => model.id === defaults.sliceReconstruct) ? defaults.sliceReconstruct : firstTextModelId,
+    // 切图的图片编辑只能落在 openai 协议模型上；没有这类模型时留空并在切图页提示
+    sliceImageEdit: sliceCapableImageModels.some((model) => model.id === defaults.sliceImageEdit)
+      ? defaults.sliceImageEdit
+      : (sliceCapableImageModels[0]?.id || ''),
   };
 }
 
-export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'models' }: SettingsModalProps) {
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
+  // 每次打开都回到调用方指定的那一页：从「插件凭据未配置」的提示条点进来要直达插件页。
+  // 用「渲染期按 prop 变化调整 state」而不是 effect，避免先渲染出模型页再跳一帧。
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) setTab(initialTab);
+  }
+
   const [imageModels, setImageModels] = useState<ImageModelConfig[]>([]);
   const [textModels, setTextModels] = useState<TextModelConfig[]>([]);
   const [defaults, setDefaults] = useState<DefaultModels>(DEFAULT_DEFAULTS);
@@ -211,7 +237,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
         next.maxOutputSize = preset.maxOutputSize;
         next.supportsAdvancedParams = preset.supportsAdvancedParams;
       }
-      if (patch.protocol === 'google') {
+      if (patch.protocol === 'google' || patch.protocol === 'grok') {
         next.supportsAdvancedParams = false;
       }
       return next;
@@ -261,6 +287,8 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
       agent: prev.agent === id ? '' : prev.agent,
       promptOptimize: prev.promptOptimize === id ? '' : prev.promptOptimize,
       imageDescribe: prev.imageDescribe === id ? '' : prev.imageDescribe,
+      sliceDecomposition: prev.sliceDecomposition === id ? '' : prev.sliceDecomposition,
+      sliceReconstruct: prev.sliceReconstruct === id ? '' : prev.sliceReconstruct,
     }));
     if (selectedTextModelId === id) {
       setSelectedTextModelId(nextModels[0]?.id || '');
@@ -350,8 +378,12 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
     setBackupError(null);
     setBackupSuccess(null);
     try {
-      await importAllData(file, (progress) => setBackupProgress(progress));
-      setBackupSuccess('数据已成功导入，页面将在 2 秒后刷新。');
+      const warnings = await importAllData(file, (progress) => setBackupProgress(progress));
+
+      setBackupSuccess(warnings.length > 0
+        ? `数据已导入，但有 ${warnings.length} 项提示：${warnings.join('；')}。页面将在 2 秒后刷新...`
+        : '数据已成功导入！页面将在 2 秒后刷新以应用更改...');
+
       setTimeout(() => window.location.reload(), 2000);
     } catch (err) {
       setBackupError(err instanceof Error ? err.message : '导入失败');
@@ -367,6 +399,10 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
 
   const completeImageOptions = imageModels.filter(isCompleteImageModel).map((model) => ({ value: model.id, label: model.name }));
   const completeTextOptions = textModels.filter(isCompleteTextModel).map((model) => ({ value: model.id, label: model.name }));
+  // 切图的图片编辑只能落在 openai 协议模型上（带 mask 的 /v1/images/edits）
+  const sliceCapableImageOptions = imageModels
+    .filter((model) => isCompleteImageModel(model) && isSliceCapableImageModel(model))
+    .map((model) => ({ value: model.id, label: model.name }));
   const selectedImageOutputSizes = selectedImageModel
     ? getImageModelOutputSizes({
         ...selectedImageModel,
@@ -388,11 +424,15 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
           <DialogDescription>按模型分别配置协议、URL 和 API Key。至少完成一个图片模型和一个文本模型后，外部功能才会解锁。</DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="models" className="min-h-0 flex-1 gap-0">
+        <Tabs value={tab} onValueChange={value => setTab(value as SettingsTab)} className="min-h-0 flex-1 gap-0">
           <TabsList className="w-full rounded-none border-b bg-transparent h-auto p-0">
             <TabsTrigger value="models" className="gap-2 rounded-none border-b-2 border-transparent data-active:border-primary data-active:bg-transparent data-active:shadow-none px-4 py-3">
               <ImageIcon className="w-4 h-4" />
               模型配置
+            </TabsTrigger>
+            <TabsTrigger value="plugins" className="gap-2 rounded-none border-b-2 border-transparent data-active:border-primary data-active:bg-transparent data-active:shadow-none px-4 py-3">
+              <Package className="w-4 h-4" />
+              插件
             </TabsTrigger>
             <TabsTrigger value="backup" className="gap-2 rounded-none border-b-2 border-transparent data-active:border-primary data-active:bg-transparent data-active:shadow-none px-4 py-3">
               <Database className="w-4 h-4" />
@@ -464,6 +504,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                         options={[
                           { value: 'google', label: 'Google' },
                           { value: 'openai', label: 'OpenAI Images' },
+                          { value: 'grok', label: 'Grok Images' },
                         ]}
                       />
                     </div>
@@ -477,7 +518,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">Base URL</label>
-                      <Input value={selectedImageModel.baseUrl} readOnly aria-readonly="true" className="cursor-default bg-muted/40" />
+                      <Input value={selectedImageModel.baseUrl} onChange={(event) => handleUpdateImageModel(selectedImageModel.id, { baseUrl: event.target.value })} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">API Key</label>
@@ -500,7 +541,17 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">最大参考图数量</label>
-                      <Input type="number" min={1} value={selectedImageModel.maxRefImages} onChange={(event) => handleUpdateImageModel(selectedImageModel.id, { maxRefImages: Number(event.target.value) || 1 })} />
+                      <Input
+                        type="number"
+                        min={0}
+                        value={selectedImageModel.maxRefImages}
+                        onChange={(event) => {
+                          const next = Number(event.target.value);
+                          handleUpdateImageModel(selectedImageModel.id, {
+                            maxRefImages: Number.isFinite(next) && next >= 0 ? Math.floor(next) : 0,
+                          });
+                        }}
+                      />
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">最大分辨率</label>
@@ -589,7 +640,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">Base URL</label>
-                      <Input value={selectedTextModel.baseUrl} readOnly aria-readonly="true" className="cursor-default bg-muted/40" />
+                      <Input value={selectedTextModel.baseUrl} onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { baseUrl: event.target.value })} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">API Key</label>
@@ -662,6 +713,25 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                   <label className="text-xs text-muted-foreground">图片描述默认模型</label>
                   <Select value={defaults.imageDescribe} onValueChange={(value) => setDefaults((prev) => ({ ...prev, imageDescribe: value }))} options={completeTextOptions} />
                 </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground">AI 拆图默认模型</label>
+                  <Select value={defaults.sliceDecomposition} onValueChange={(value) => setDefaults((prev) => ({ ...prev, sliceDecomposition: value }))} options={completeTextOptions} />
+                  <p className="text-[11px] text-muted-foreground">UI设计模式：识别切片与背景候选，需要视觉能力</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground">网页复刻默认模型</label>
+                  <Select value={defaults.sliceReconstruct} onValueChange={(value) => setDefaults((prev) => ({ ...prev, sliceReconstruct: value }))} options={completeTextOptions} />
+                  <p className="text-[11px] text-muted-foreground">UI设计模式：多轮工具调用生成网页，建议用能力更强的模型</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground">切图图片编辑默认模型</label>
+                  <Select value={defaults.sliceImageEdit} onValueChange={(value) => setDefaults((prev) => ({ ...prev, sliceImageEdit: value }))} options={sliceCapableImageOptions} />
+                  <p className="text-[11px] text-muted-foreground">
+                    {sliceCapableImageOptions.length === 0
+                      ? '需要一个 OpenAI 协议的图片模型；Gemini / Grok 不支持带蒙版的局部编辑'
+                      : 'AI 透明化与背景补齐使用，仅支持 OpenAI 协议'}
+                  </p>
+                </div>
               </div>
 
               {modelCheckError && <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{modelCheckError}</div>}
@@ -679,6 +749,10 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                 </div>
               )}
             </div>
+          </TabsContent>
+
+          <TabsContent value="plugins" className="min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6 mt-0">
+            <PluginsSettings />
           </TabsContent>
 
           <TabsContent value="backup" className="min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6 mt-0">
@@ -743,7 +817,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                   使用方法
                 </summary>
                 <ol className="mt-3 list-decimal list-inside space-y-2 text-muted-foreground">
-                  <li>先完成至少一个图片模型和一个文本模型的全部信息。（中转站创建2个API，一个用于GPT推理，一个是生图专用的API）</li>
+                  <li>先完成至少一个图片模型和一个文本模型的全部信息。（中转站创建 2 个 API，一个用于 GPT 推理，一个用于生图。）</li>
                   <li>保存后，外部工作区只会显示这些配置完整的模型。</li>
                   <li>再为各工作流指定默认模型，即可开始生图、反推或 Agent 工作流。</li>
                 </ol>
@@ -758,6 +832,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange }: SettingsModal
                   <li>本站为本地优先应用：模型配置、任务历史、设置与生成图片默认保存在你的浏览器本地。</li>
                   <li>每个模型的 API Key 和 Base URL 仅用于调用你自己配置的上游服务。</li>
                   <li>生图、反推、Agent、提示词优化等功能会把你当前选择的提示词、参考图或对话内容发送到对应模型配置的上游接口。</li>
+                  <li>UI设计模式会把源图截图、切图资产总览图与对话内容发送到你配置的文本/图片模型；切图工作区与图片数据只存在本地 IndexedDB。</li>
                   <li>备份文件可能包含模型配置、本地任务记录与图片数据，请自行妥善保管。</li>
                 </ul>
               </details>
