@@ -1,0 +1,11 @@
+{
+  "facets": { "modelFamily": "grok-imagine-video-1.5" },
+  "fields": {
+    "resolution": "720p",
+    "duration": 8,
+    "prompt": "让画面中的人物自然转身并微笑"
+  },
+  "media": {
+    "referenceImage": ["https://app.example/api/nova/plugin-media/ref.png"]
+  }
+}

@@ -37,6 +37,8 @@ backend/ccode-images/
 # backend/plugins/ 即可，这条规则保证工作副本不会因此变脏。
 backend/plugins/*
 !backend/plugins/ccode-h3/
+!backend/plugins/grok-video/
+!backend/plugins/grok-video/**
 # IDE/Editor configs
 .arts/
 .claude/

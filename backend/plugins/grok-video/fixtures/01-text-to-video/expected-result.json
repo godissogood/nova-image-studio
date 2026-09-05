@@ -1,0 +1,12 @@
+{
+  "state": "completed",
+  "progress": 100,
+  "assets": [
+    {
+      "kind": "video",
+      "url": "https://cdn.example/grok-fixture-001.mp4",
+      "durationSec": 5,
+      "mime": "video/mp4"
+    }
+  ]
+}

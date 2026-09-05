@@ -1,0 +1,14 @@
+{
+  "model": "grok-imagine-video-1.5",
+  "method": "POST",
+  "url": "https://upstream.test/v1/videos/generations",
+  "body": {
+    "model": "grok-imagine-video-1.5",
+    "prompt": "让画面中的人物自然转身并微笑",
+    "resolution": "720p",
+    "duration": 8,
+    "image": {
+      "image_url": "https://app.example/api/nova/plugin-media/ref.png"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "model": "grok-imagine-video",
+  "method": "POST",
+  "url": "https://upstream.test/v1/videos/generations",
+  "body": {
+    "model": "grok-imagine-video",
+    "prompt": "一只公鸡穿吊带裤打篮球，电影感镜头，动作连贯",
+    "resolution": "480p",
+    "duration": 5
+  }
+}

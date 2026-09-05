@@ -1,0 +1,43 @@
+{
+  "apiVersion": 1,
+  "id": "grok-video",
+  "name": "Grok 视频",
+  "version": "1.0.0",
+  "kind": "video",
+  "mode": "declarative",
+  "author": "iToo",
+  "description": "通过 iToo Sub2API 调用 Grok Imagine 视频，支持文生视频和图生视频。",
+  "homepage": "https://api.itoo.me",
+  "outputs": ["video"],
+  "credential": {
+    "source": "client",
+    "label": "Grok-Heavy API Key",
+    "defaultBaseUrl": "https://api.itoo.me",
+    "helpUrl": "https://api.itoo.me"
+  },
+  "permissions": {
+    "hosts": ["api.itoo.me"]
+  },
+  "media": {
+    "images": { "maxCount": 1 }
+  },
+  "runtime": {
+    "submitTimeoutMs": 90000,
+    "pollIntervalMs": 5000,
+    "maxPollMs": 1800000
+  },
+  "models": [
+    {
+      "id": "grok-imagine-video",
+      "name": "Grok Imagine Video",
+      "shortName": "Grok Video",
+      "description": "文生视频，480p 或 720p"
+    },
+    {
+      "id": "grok-imagine-video-1.5",
+      "name": "Grok Imagine Video 1.5",
+      "shortName": "Grok Video 1.5",
+      "description": "图生视频，需要一张参考图片"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "facets": { "modelFamily": "grok-imagine-video" },
+  "fields": {
+    "resolution": "480p",
+    "duration": 5,
+    "prompt": "一只公鸡穿吊带裤打篮球，电影感镜头，动作连贯"
+  },
+  "media": {}
+}

@@ -1,0 +1,95 @@
+{
+  "apiVersion": 1,
+  "priceQuantityField": "duration",
+  "layout": {
+    "toolbar": ["$model", "resolution", "duration"],
+    "body": ["referenceImage", "prompt"]
+  },
+  "modelSelector": {
+    "label": "模型",
+    "familyLabel": "Grok Imagine Video",
+    "familyDescription": "通过 iToo Sub2API 调用 · 按秒计费",
+    "facets": [
+      { "key": "modelFamily", "label": "模型", "icon": "sparkles", "control": "list" }
+    ],
+    "facetOptions": {
+      "modelFamily": [
+        {
+          "value": "grok-imagine-video",
+          "label": "Grok Video",
+          "fullLabel": "Grok Imagine Video",
+          "description": "文生视频，使用提示词生成视频"
+        },
+        {
+          "value": "grok-imagine-video-1.5",
+          "label": "Grok Video 1.5",
+          "fullLabel": "Grok Imagine Video 1.5",
+          "description": "图生视频，需要一张参考图片"
+        }
+      ]
+    },
+    "variants": [
+      { "model": "grok-imagine-video", "modelFamily": "grok-imagine-video" },
+      { "model": "grok-imagine-video-1.5", "modelFamily": "grok-imagine-video-1.5" }
+    ]
+  },
+  "fields": [
+    {
+      "key": "resolution",
+      "type": "select-grid",
+      "label": "分辨率",
+      "icon": "maximize",
+      "columns": 3,
+      "default": "480p",
+      "options": [
+        { "value": "480p", "label": "480p" },
+        { "value": "720p", "label": "720p" },
+        { "value": "1080p", "label": "1080p", "availableWhen": { "modelFamily": ["grok-imagine-video-1.5"] } }
+      ]
+    },
+    {
+      "key": "duration",
+      "type": "select-grid",
+      "label": "视频时长",
+      "icon": "clock",
+      "columns": 5,
+      "suffix": "秒",
+      "default": 5,
+      "options": [
+        { "value": 1, "label": "1" },
+        { "value": 3, "label": "3" },
+        { "value": 5, "label": "5" },
+        { "value": 8, "label": "8" },
+        { "value": 10, "label": "10" },
+        { "value": 12, "label": "12" },
+        { "value": 15, "label": "15" }
+      ]
+    },
+    {
+      "key": "referenceImage",
+      "type": "media",
+      "kind": "images",
+      "style": "frame",
+      "label": "参考图片",
+      "hint": "Grok Video 1.5 图生视频使用。文生视频无需上传。",
+      "requiredIf": { "modelFamily": ["grok-imagine-video-1.5"] },
+      "showIf": { "modelFamily": ["grok-imagine-video-1.5"] },
+      "maxCount": 1
+    },
+    {
+      "key": "prompt",
+      "type": "textarea",
+      "label": "提示词描述",
+      "icon": "clapperboard",
+      "required": true,
+      "maxLength": 5000,
+      "rows": 8,
+      "placeholder": "描述你想生成的视频，例如：一只公鸡穿吊带裤打篮球，电影感镜头，动作连贯...",
+      "presets": [
+        "海边日落，海浪缓慢拍打礁石，镜头平稳向前推进",
+        "一只公鸡穿吊带裤打篮球，连续运球后投篮，电影感镜头，动作连贯",
+        "赛博朋克街道的雨夜追逐，霓虹灯倒映在积水中，镜头快速移动"
+      ]
+    }
+  ]
+}
