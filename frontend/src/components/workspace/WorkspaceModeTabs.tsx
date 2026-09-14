@@ -41,7 +41,7 @@ export function WorkspaceModeTabs({ wideMode = false, showPromptGallery = false 
   if (wideMode) {
     // 宽屏 → 垂直气泡侧边栏
     return (
-      <TabsList className="w-full flex-col gap-1.5 rounded-2xl border border-border bg-muted/50 p-2">
+      <TabsList className="itoo-mode-tabs itoo-mode-tabs-vertical w-full flex-col gap-1.5 rounded-2xl border border-border bg-muted/50 p-2">
         {allTabs.map(({ value, icon: Icon, label }) => (
           <TabsTrigger
             key={value}
@@ -59,7 +59,7 @@ export function WorkspaceModeTabs({ wideMode = false, showPromptGallery = false 
   // 窄屏 → 水平标签栏
   return (
     <TabsList
-      className={`scrollbar-hide flex h-16 w-full max-w-full touch-pan-x select-none justify-start gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain rounded-2xl bg-muted p-1 sm:grid ${gridCols} sm:overflow-visible sm:border sm:border-border sm:select-auto`}
+      className={`itoo-mode-tabs scrollbar-hide flex h-16 w-full max-w-full touch-pan-x select-none justify-start gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain rounded-2xl bg-muted p-1 sm:grid ${gridCols} sm:overflow-visible sm:border sm:border-border sm:select-auto`}
       onPointerDown={event => {
         const el = event.currentTarget;
         if (!el || (event.pointerType === 'mouse' && event.button !== 0) || el.scrollWidth <= el.clientWidth) return;

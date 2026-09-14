@@ -219,18 +219,18 @@ export function WorkspaceShell() {
   return (
     <div
       className={cn(
-        'mx-auto flex min-h-screen w-full flex-col gap-4 overflow-x-hidden px-3 py-3 transition-[max-width] duration-200 sm:gap-5 sm:px-6 sm:py-5 lg:px-8',
+        'itoo-app-shell mx-auto flex min-h-screen w-full flex-col gap-4 overflow-x-hidden px-3 py-3 transition-[max-width] duration-200 sm:gap-5 sm:px-6 sm:py-5 lg:px-8',
         wideMode ? 'max-w-none xl:h-dvh xl:min-h-0 xl:gap-3 xl:py-3 xl:overflow-hidden' : 'max-w-5xl',
         !wideMode && activeTab === 'agent' && 'h-dvh min-h-0 overflow-hidden'
       )}
     >
       <div className={cn(
-        'flex-1 bg-transparent shadow-none sm:rounded-3xl sm:bg-card/95 sm:shadow-sm sm:border sm:border-border/70',
+        'itoo-app-frame flex-1 bg-transparent shadow-none sm:rounded-3xl sm:bg-card/95 sm:shadow-sm sm:border sm:border-border/70',
         wideMode && 'flex min-h-0 flex-col',
         !wideMode && activeTab === 'agent' && 'flex min-h-0 flex-col'
       )}>
         <div className={cn(
-          'p-0 sm:p-5',
+          'itoo-app-body p-0 sm:p-5',
           wideMode
             ? 'flex h-full flex-1 flex-col min-h-0 sm:p-3'
             : activeTab === 'agent'
@@ -252,6 +252,7 @@ export function WorkspaceShell() {
             onValueChange={value => setActiveTab(value as typeof activeTab)}
             orientation={wideMode ? 'vertical' : 'horizontal'}
             className={cn(
+              'itoo-workspace-tabs',
               wideMode
                 ? 'gap-4 xl:flex-row xl:flex-1 xl:min-h-0'
                 : activeTab === 'agent'
@@ -259,7 +260,7 @@ export function WorkspaceShell() {
                   : 'gap-2'
             )}
           >
-            <div className={cn('flex flex-col', wideMode && 'self-stretch sticky top-4 h-full xl:shrink-0')}>
+            <div className={cn('itoo-workspace-nav flex min-h-0 flex-col', wideMode && 'self-stretch sticky top-0 h-full min-h-0 overflow-y-auto xl:shrink-0')}>
               {wideMode && (
                 <button
                   type="button"
@@ -351,6 +352,7 @@ export function WorkspaceShell() {
             </div>
 
             <div className={cn(
+              'itoo-workspace-content',
               wideMode && 'xl:flex xl:flex-1 xl:min-h-0 xl:min-w-0',
               wideMode && (activeTab === 'image-generation' || activeTab === 'agent'
                 ? 'xl:overflow-hidden'

@@ -52,6 +52,29 @@ Git 约定：`origin` 指向 itoo fork，`upstream` 指向官方仓库。生产�
    - OVH 当前镜像：`godissogood/nova-image-studio:d6f0bf0`；容器 `healthy`；公网首页和配置 API 返回 `200`；Sub2API 未重启。
    - 测试：前端 442 项、后端 48 项通过；构建通过；本轮按用户要求跳过浏览器验收。
 
+### 2026-09-05：首次完整同步原作者 3.3.0 版本
+
+本次同步的提交关系如下，后续追溯冲突时以这些提交为准：
+
+```text
+backup/itoo-before-upstream-20260905  (本地定制基线 644864e)
+                 + upstream/main 808175e
+                 -> e5c3845  merge upstream/main into sync/upstream-20260905
+                 -> ad2ef2c  恢复 iToo relay policy
+                 -> 44a4934  隐藏当前不可用的 Ccode H3 插件
+```
+
+官方这次是一次大功能合并（从本地基线 `644864e` 到官方 `808175e` 共 251 个文件，新增 37,836 行、删除 1,810 行）。主要变化：
+
+1. **插件化视频运行时**：新增 `backend/plugin-runtime/` 的 schema、请求执行、状态归一化、媒体上传、校验和 fixture 验证；新增 `ccode-h3` 插件、插件设置、插件工作台、任务历史、并发生成、分屏预览和计费展示。
+2. **画布视频/音频能力**：无限画布接入 schema 驱动的视频节点、音频/视频素材节点、视频生成预览、同款参数控件、媒体 IndexedDB 存储和真实进度展示。
+3. **生图和工作区体验**：生图卡片工具栏、历史列表布局、插件价格与配置跳转、并发子任务轮询，以及一批 UI 细节调整。
+4. **切图和网页复刻工作区**：新增 Slice 编辑器、切图/修复/矢量化/重建流程、素材与历史存储、AI 客户端和大量回归测试。
+5. **Agent 和基础设施**：新增 Agent 协议流、SSE 可靠性处理、Web Agent 工具与虚拟文件系统、备份和媒体处理能力；同步了 `README.zh-CN.md`、`docs/plugins/` 和示例图片。
+6. **官方品牌和版本**：官方把显示名统一为 `Nova Studio`，版本升到 `3.3.0`。这一项在 iToo 分支必须恢复为 `iToo Image`，不能直接接受官方品牌提交 `76beb64`。
+
+同步后保留的 iToo 定制不是官方版本的一部分，主要包括：固定 `https://api.itoo.me` 的客户端 Base URL、服务端固定 `http://sub2api:8080`、模型注册表完整性和即时刷新、iToo 品牌、Grok 视频插件、Grok 图片同源托管与失败重取、不可用 Ccode H3 的界面隐藏，以及对应测试和 OVH 部署文件。官方合并时曾覆盖或删除 `deploy/ovh/`、本文件、`frontend/src/lib/itoo-config.ts`、模型热更新 Hook 和 iToo 回归测试，因此不能把 `upstream/main` 直接快进到生产分支。
+
 ### 2026-07-16：品牌文案与关于页精简
 
 1. 用户可见的 `Nova Image` 品牌文案统一改为 `iToo Image`。
@@ -146,7 +169,7 @@ Git 约定：`origin` 指向 itoo fork，`upstream` 指向官方仓库。生产�
 
 ## 官方升级合并流程
 
-不要直接在生产 `main` 上盲目执行合并。按以下流程操作：
+下次更新的最快安全路径是只做一次官方合并，然后集中重套一组可检查的 iToo 约束。不要在生产 `main` 上直接快进，也不要把当前界面微调和官方同步放在同一个提交里。开始前必须先提交或暂存本地改动，工作树保持干净。
 
 ```bash
 git fetch origin
@@ -157,14 +180,26 @@ git switch -c sync/upstream-YYYYMMDD
 git merge --no-commit --no-ff upstream/main
 ```
 
-冲突处理和审查重点：
+合并后按以下顺序处理，可以减少反复返工：
 
-1. 先阅读官方变更日志和 `git diff main...upstream/main`。
-2. 重点检查本文件“安全不变量”列出的代码位置。
-3. 保留官方的功能修复，同时重新套用 itoo 常量、后端上游强制策略和配置事件同步。
-4. 运行 `npm run test:run`、`npm run lint`、`npm run build`。
-5. 本地浏览器验证设置保存、新增模型默认值、Base URL 只读和实际请求地址。
-6. 合并临时分支到 `main`，推送 `origin/main`，再部署 OVH。
+1. 先看范围：`git log --oneline main..upstream/main`、`git diff --stat main...upstream/main`，确认官方新增的是功能还是品牌/部署文件。
+2. 先解决结构冲突：优先保留官方插件、画布和工作区实现；对品牌、Base URL、模型注册表、部署文件和本文件，按“安全不变量”重新套用 iToo 版本。
+3. 用搜索做定向复核，而不是手工通读全部 diff：
+
+   ```bash
+   rg "Nova Studio|api\\.openai\\.com|resolveNovaApiBaseUrl|request\\.baseUrl|AGENT_DEFAULT_IMAGE_MODEL|ITOO_API_BASE_URL|resolveConfiguredUpstreamBaseUrl|nova-model-registry-updated|sub2api:8080" frontend backend deploy
+   ```
+
+4. 先跑自动检查：`npm run test:run`、`npm run lint`、`npm run build`；再运行后端插件 fixture（`cd backend && npm run plugins:verify`）。
+5. 用浏览器验收设置保存即时生效、Base URL 只读、图片/视频/画布主流程、宽窄屏导航和控制台错误；后端确认客户端传入的 Base URL 没有成为真实 `fetch` 目标。
+6. 只在临时分支所有检查通过后提交，再合并到 `main`、推送 `origin/main`。部署时只更新 Nova 容器，不修改或重启 Sub2API。
+
+每次官方更新都应保留一份可回滚点，并把“官方合并提交、定制修复提交、生产镜像标签”写入下方部署记录。对于重复出现的同一冲突，可以在确认文件边界稳定后启用 `git rerere`，但不能用自动记忆替代安全不变量检查：
+
+```bash
+git config rerere.enabled true
+git tag backup/itoo-before-upstream-YYYYMMDD
+```
 
 建议使用以下命令确认定制没有被覆盖：
 

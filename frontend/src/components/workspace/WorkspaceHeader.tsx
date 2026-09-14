@@ -126,7 +126,7 @@ export const WorkspaceHeader = forwardRef<WorkspaceHeaderRef, WorkspaceHeaderPro
   useEffect(() => () => cleanupViewerObjectUrl(), [cleanupViewerObjectUrl]);
 
   return (
-    <header className={cn(sidebarMode ? 'xl:pb-0' : 'space-y-3 sm:space-y-5')}>
+    <header className={cn('itoo-workspace-header', sidebarMode && 'itoo-workspace-header-sidebar', sidebarMode ? 'xl:pb-0' : 'space-y-3 sm:space-y-5')}>
       <div className="flex items-start justify-between gap-2 sm:gap-4">
         <div className={cn("flex min-w-0 shrink-0 items-center gap-2 sm:gap-3", sidebarMode && 'xl:hidden')}>
           <button
@@ -141,9 +141,9 @@ export const WorkspaceHeader = forwardRef<WorkspaceHeaderRef, WorkspaceHeaderPro
               className="h-8 w-8 flex-shrink-0 rounded-lg object-cover ring-1 ring-border/60 sm:h-11 sm:w-11 sm:rounded-xl"
             />
           </button>
-          <div className="hidden min-w-0 space-y-1 sm:block">
-              <h1 className="truncate text-2xl font-semibold tracking-tight">iToo Image</h1>
-            <p className="text-sm text-muted-foreground">批量 API 图像生成器</p>
+          <div className="min-w-0 max-w-[8rem] space-y-0.5 sm:max-w-none sm:space-y-1">
+              <h1 className="truncate text-base font-semibold tracking-tight sm:text-2xl">iToo Image</h1>
+            <p className="truncate text-[10px] text-muted-foreground sm:text-sm">批量 API 图像生成器</p>
           </div>
         </div>
 
