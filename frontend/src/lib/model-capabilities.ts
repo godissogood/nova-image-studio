@@ -106,8 +106,8 @@ const GROK_IMAGE_ASPECT_RATIOS: { value: AspectRatio; label: string }[] = [
 
 function isGrokImagePreset(presetId: string): boolean {
   return presetId === 'grok-imagine-image'
-    || presetId === 'grok-imagine-image-quality'
-    || presetId === 'grok-imagine-image-edit';
+    || presetId === 'grok-imagine-image-2.0'
+    || presetId === 'grok-imagine-image-quality';
 }
 
 export const CUSTOM_IMAGE_SIZE_LIMITS = {
@@ -319,7 +319,7 @@ export function getSizeOptions(model: ModelId): { value: OutputSize; label: stri
   if (presetId === 'grok-imagine-image') {
     return [{ value: '1K', label: '1K' }];
   }
-  if (presetId === 'grok-imagine-image-quality' || presetId === 'grok-imagine-image-edit') {
+  if (presetId === 'grok-imagine-image-2.0' || presetId === 'grok-imagine-image-quality') {
     return [
       { value: '1K', label: '1K' },
       { value: '2K', label: '2K' },
@@ -470,7 +470,7 @@ export function isRetryLayoutCompatible(model: ModelId, outputSize: OutputSize, 
     return outputSize === '1K';
   }
 
-  if (presetId === 'grok-imagine-image-quality' || presetId === 'grok-imagine-image-edit') {
+  if (presetId === 'grok-imagine-image-2.0' || presetId === 'grok-imagine-image-quality') {
     return outputSize === '1K' || outputSize === '2K';
   }
 
@@ -508,9 +508,6 @@ export function findReferenceCapableModel(preferredId?: string): ModelId | null 
     const fromDefault = capable.find((model) => model.id === defaultI2i);
     if (fromDefault) return fromDefault.id;
   }
-
-  const grokEdit = capable.find((model) => model.builtinPreset === 'grok-imagine-image-edit');
-  if (grokEdit) return grokEdit.id;
 
   return capable[0].id;
 }

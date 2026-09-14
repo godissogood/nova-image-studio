@@ -17,8 +17,8 @@ export type BuiltinImagePresetId =
   | 'gpt-image-2'
   | 'gpt-image-2.5'
   | 'grok-imagine-image'
-  | 'grok-imagine-image-quality'
-  | 'grok-imagine-image-edit';
+  | 'grok-imagine-image-2.0'
+  | 'grok-imagine-image-quality';
 
 export interface ImageModelConfig {
   id: string;
@@ -97,6 +97,56 @@ export interface NovaModelRegistry {
 const REGISTRY_KEY = 'nova-model-registry';
 
 export const BUILTIN_IMAGE_PRESETS: Record<BuiltinImagePresetId, BuiltinImagePreset> = {
+  'gpt-image-2': {
+    id: 'gpt-image-2',
+    protocol: 'openai',
+    name: 'GPT Image 2',
+    modelId: 'gpt-image-2',
+    baseUrl: ITOO_API_BASE_URL,
+    maxRefImages: 16,
+    maxOutputSize: '4K',
+    supportsAdvancedParams: true,
+  },
+  'gpt-image-2.5': {
+    id: 'gpt-image-2.5',
+    protocol: 'openai',
+    name: 'GPT Image 2.5（推荐）',
+    modelId: 'gpt-image-2.5',
+    baseUrl: ITOO_API_BASE_URL,
+    maxRefImages: 16,
+    maxOutputSize: '4K',
+    supportsAdvancedParams: true,
+  },
+  'grok-imagine-image': {
+    id: 'grok-imagine-image',
+    protocol: 'grok',
+    name: 'Grok Imagine',
+    modelId: 'grok-imagine-image',
+    baseUrl: ITOO_API_BASE_URL,
+    maxRefImages: 0,
+    maxOutputSize: '1K',
+    supportsAdvancedParams: false,
+  },
+  'grok-imagine-image-2.0': {
+    id: 'grok-imagine-image-2.0',
+    protocol: 'grok',
+    name: 'Grok Imagine 2.0（推荐）',
+    modelId: 'grok-imagine-image-2.0',
+    baseUrl: ITOO_API_BASE_URL,
+    maxRefImages: 0,
+    maxOutputSize: '2K',
+    supportsAdvancedParams: false,
+  },
+  'grok-imagine-image-quality': {
+    id: 'grok-imagine-image-quality',
+    protocol: 'grok',
+    name: 'Grok Imagine Quality',
+    modelId: 'grok-imagine-image-quality',
+    baseUrl: ITOO_API_BASE_URL,
+    maxRefImages: 0,
+    maxOutputSize: '2K',
+    supportsAdvancedParams: false,
+  },
   'gemini-2.5-flash-image': {
     id: 'gemini-2.5-flash-image',
     protocol: 'google',
@@ -135,56 +185,6 @@ export const BUILTIN_IMAGE_PRESETS: Record<BuiltinImagePresetId, BuiltinImagePre
     baseUrl: ITOO_API_BASE_URL,
     maxRefImages: 14,
     maxOutputSize: '1K',
-    supportsAdvancedParams: false,
-  },
-  'gpt-image-2': {
-    id: 'gpt-image-2',
-    protocol: 'openai',
-    name: 'GPT Image 2',
-    modelId: 'gpt-image-2',
-    baseUrl: ITOO_API_BASE_URL,
-    maxRefImages: 16,
-    maxOutputSize: '4K',
-    supportsAdvancedParams: true,
-  },
-  'gpt-image-2.5': {
-    id: 'gpt-image-2.5',
-    protocol: 'openai',
-    name: 'GPT Image 2.5',
-    modelId: 'gpt-image-2.5',
-    baseUrl: ITOO_API_BASE_URL,
-    maxRefImages: 16,
-    maxOutputSize: '4K',
-    supportsAdvancedParams: true,
-  },
-  'grok-imagine-image': {
-    id: 'grok-imagine-image',
-    protocol: 'grok',
-    name: 'Grok Imagine',
-    modelId: 'grok-imagine-image',
-    baseUrl: ITOO_API_BASE_URL,
-    maxRefImages: 0,
-    maxOutputSize: '1K',
-    supportsAdvancedParams: false,
-  },
-  'grok-imagine-image-quality': {
-    id: 'grok-imagine-image-quality',
-    protocol: 'grok',
-    name: 'Grok Imagine Quality',
-    modelId: 'grok-imagine-image-quality',
-    baseUrl: ITOO_API_BASE_URL,
-    maxRefImages: 0,
-    maxOutputSize: '2K',
-    supportsAdvancedParams: false,
-  },
-  'grok-imagine-image-edit': {
-    id: 'grok-imagine-image-edit',
-    protocol: 'grok',
-    name: 'Grok Imagine Edit',
-    modelId: 'grok-imagine-image-edit',
-    baseUrl: ITOO_API_BASE_URL,
-    maxRefImages: 4,
-    maxOutputSize: '2K',
     supportsAdvancedParams: false,
   },
 };
