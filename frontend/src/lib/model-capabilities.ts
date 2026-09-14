@@ -186,9 +186,9 @@ function isImageSizeWithinLimits(width: number, height: number, maxSide?: number
   );
 }
 
-function isGptImage2ProResolutionSupported(size?: string): boolean {
+function isGptImage2ProResolutionSupported(size?: string, model: ModelId = 'gpt-image-2'): boolean {
   const parsed = parseImageSize(size);
-  return Boolean(parsed && isImageSizeWithinLimits(parsed.width, parsed.height, getCustomSizeMaxSide('gpt-image-2')));
+  return Boolean(parsed && isImageSizeWithinLimits(parsed.width, parsed.height, getCustomSizeMaxSide(model)));
 }
 
 export function getGptImageResolution(outputSize: OutputSize, aspectRatio: AspectRatio): string | undefined {
@@ -333,7 +333,7 @@ export function getSizeOptions(model: ModelId): { value: OutputSize; label: stri
       { value: '4K', label: '4K' },
     ];
   }
-  if (presetId === 'gemini-3-pro-image-preview' || presetId === 'gpt-image-2') {
+  if (presetId === 'gemini-3-pro-image-preview' || String(presetId).startsWith('gpt-image-2')) {
     return [
       { value: '1K', label: '1K' },
       { value: '2K', label: '2K' },
@@ -370,15 +370,12 @@ export function getAspectRatioOptions(model: ModelId, outputSize: OutputSize): A
       resolution: ar.resolutions[outputSize] || ar.resolutions['1K'],
     }));
   }
-  if (presetId === 'gpt-image-2') {
+  if (String(presetId).startsWith('gpt-image-2')) {
     return GPT_IMAGE_ASPECT_RATIOS.map(ar => ({
       value: ar.value,
       label: ar.label,
       resolution: getGptImageResolution(outputSize, ar.value) || '',
-    })).filter(option => isGptImage2ProResolutionSupported(option.resolution));
-  }
-  if (String(presetId).startsWith('gpt-image-2')) {
-    return BANANA_ASPECT_RATIOS.map(ar => ({ ...ar, resolution: '' }));
+    })).filter(option => isGptImage2ProResolutionSupported(option.resolution, model));
   }
   if (isGrokImagePreset(presetId)) {
     return GROK_IMAGE_ASPECT_RATIOS.map(ar => ({
@@ -456,9 +453,9 @@ export function isRetryLayoutCompatible(model: ModelId, outputSize: OutputSize, 
     return ['1K', '2K', '4K'].includes(outputSize);
   }
 
-  if (presetId === 'gpt-image-2') {
+  if (String(presetId).startsWith('gpt-image-2')) {
     const resolution = getGptImageResolution(outputSize, aspectRatio);
-    return ['1K', '2K', '4K'].includes(outputSize) && isGptImage2ProResolutionSupported(resolution);
+    return ['1K', '2K', '4K'].includes(outputSize) && isGptImage2ProResolutionSupported(resolution, model);
   }
 
   if (presetId === 'gemini-3.1-flash-image-preview') {

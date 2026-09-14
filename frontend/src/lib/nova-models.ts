@@ -15,6 +15,7 @@ export type BuiltinImagePresetId =
   | 'gemini-3.1-flash-image-preview'
   | 'gemini-3.1-flash-lite-image'
   | 'gpt-image-2'
+  | 'gpt-image-2.5'
   | 'grok-imagine-image'
   | 'grok-imagine-image-quality'
   | 'grok-imagine-image-edit';
@@ -141,6 +142,16 @@ export const BUILTIN_IMAGE_PRESETS: Record<BuiltinImagePresetId, BuiltinImagePre
     protocol: 'openai',
     name: 'GPT Image 2',
     modelId: 'gpt-image-2',
+    baseUrl: ITOO_API_BASE_URL,
+    maxRefImages: 16,
+    maxOutputSize: '4K',
+    supportsAdvancedParams: true,
+  },
+  'gpt-image-2.5': {
+    id: 'gpt-image-2.5',
+    protocol: 'openai',
+    name: 'GPT Image 2.5',
+    modelId: 'gpt-image-2.5',
     baseUrl: ITOO_API_BASE_URL,
     maxRefImages: 16,
     maxOutputSize: '4K',
