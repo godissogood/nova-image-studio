@@ -338,35 +338,28 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
     }
   };
 
-  const persistRegistry = () => {
-    if (imageModels.length === 0) {
-      setError('至少填写一个图片模型');
+  const persistSingleModel = (kind: 'image' | 'text', id: string) => {
+    const model = kind === 'image'
+      ? imageModels.find((item) => item.id === id)
+      : textModels.find((item) => item.id === id);
+    if (!model) return;
+    const complete = kind === 'image'
+      ? isCompleteImageModel(model as ImageModelConfig)
+      : isCompleteTextModel(model as TextModelConfig);
+    if (!complete) {
+      setError(`请先完成${kind === 'image' ? '图片' : '文本'}模型的名称、模型 ID 和 API Key`);
+      setSuccess(null);
       return;
     }
-    if (textModels.length === 0) {
-      setError('至少填写一个文本模型');
-      return;
-    }
-    if (!imageModels.some(isCompleteImageModel)) {
-      setError('至少完成一个图片模型的全部信息');
-      return;
-    }
-    if (!textModels.some(isCompleteTextModel)) {
-      setError('至少完成一个文本模型的全部信息');
-      return;
-    }
-
-    const registry = {
+    saveRegistry({
       imageModels,
       textModels,
       defaults: normalizeDefaults(defaults, imageModels, textModels),
-    };
-
-    saveRegistry(registry);
+    });
     syncDynamicModelExports();
     window.dispatchEvent(new Event('nova-model-registry-updated'));
     onApiKeyChange?.(hasAnyApiKey());
-    setSuccess('设置已保存');
+    setSuccess(`${model.name || '当前模型'} 已保存`);
     setError(null);
     setModelStatuses(null);
     setModelCheckError(null);
@@ -502,10 +495,6 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                 <p className="text-sm font-medium">模型级独立配置</p>
                 <p className="text-xs text-muted-foreground">每个模型单独记录协议、Base URL、API Key。外部只显示配置完整的模型。</p>
               </div>
-              <Button onClick={persistRegistry} className="gap-2">
-                <Save className="w-4 h-4" />
-                保存设置
-              </Button>
             </div>
 
             {error && <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
@@ -628,7 +617,11 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                         />
                       </div>
                     )}
-                    <div className="md:col-span-2 flex justify-end">
+                    <div className="md:col-span-2 flex justify-end gap-2">
+                      <Button size="sm" className="gap-2" onClick={() => persistSingleModel('image', selectedImageModel.id)}>
+                        <Save className="w-4 h-4" />
+                        保存模型
+                      </Button>
                       <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" onClick={() => handleDeleteImageModel(selectedImageModel.id)}>
                         <Trash2 className="w-4 h-4" />
                         删除模型
@@ -738,7 +731,11 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                       <label className="text-xs text-muted-foreground">协议描述</label>
                       <Input value={selectedTextModel.note || ''} onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { note: event.target.value })} />
                     </div>
-                    <div className="md:col-span-2 flex justify-end">
+                    <div className="md:col-span-2 flex justify-end gap-2">
+                      <Button size="sm" className="gap-2" onClick={() => persistSingleModel('text', selectedTextModel.id)}>
+                        <Save className="w-4 h-4" />
+                        保存模型
+                      </Button>
                       <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" onClick={() => handleDeleteTextModel(selectedTextModel.id)}>
                         <Trash2 className="w-4 h-4" />
                         删除模型
