@@ -1,6 +1,6 @@
 # itoo.me 二开记忆
 
-最后更新：2026-07-16
+最后更新：2026-09-14
 
 ## 项目身份
 
@@ -15,6 +15,42 @@
 Git 约定：`origin` 指向 itoo fork，`upstream` 指向官方仓库。生产服务器只跟踪 `origin/main`。
 
 ## 已完成
+
+### 2026-09-14：本轮会话故障定位、图片取回修复与视频插件整理
+
+1. Grok 图片结果处理已改为服务端托管。
+   - Grok 文生图和图生图优先请求 `response_format: b64_json`，避免把临时跨域地址直接交给浏览器。
+   - 仍返回 URL 时，原始来源写入 SQLite `task_image_sources`，客户端只收到本站 `/api/nova/images/{taskId}/{index}`。
+   - 服务端下载限制来源域名/路径、DNS 私网、重定向、MIME、文件签名、32 MB、60 秒和并发数；不转发用户 API Key。
+   - 下载失败不改变已完成任务，图片路由可在保留期内再次取回；旧任务读取时会迁移为本站地址。
+   - `NOVA_GROK_MEDIA_BASE_URL` 只作为服务器显式配置的媒体来源，默认留空；已确认 `bya.re/v1/media/images/...` 当前不可直接取回，不能假定可用。
+
+2. Agent 图片下载失败可恢复。
+   - 任务 ID、完成状态和取回错误持久化到 IndexedDB。
+   - “重新取回”只查询原任务并下载，不重新创建生图任务、不重复扣费。
+   - 部分图片成功时按任务图片序号去重；刷新页面后仍可恢复；任务过期后清理取回入口。
+
+3. 文本推理强度和超时已分层调整。
+   - Agent：Medium；SSE 改为空闲 180 秒超时，只有连续无活动才中止，避免 45 秒墙钟误杀。
+   - 提示词整理、图片描述、画布提示词：Low；切图 AI：Medium；复杂网页重建继续 High。
+   - 已补充流超时、部分输出不重复重试和 Chat `reasoning_effort` 透传测试。
+
+4. 视频插件显示名改为“视频插件”。
+   - 仅修改 `backend/plugins/grok-video/manifest.json` 的显示名。
+   - 插件 ID `grok-video`、模型、接口、历史任务和配置均保持不变。
+   - 当前插件工作台没有通用的“提示词优化”按钮；可通过 Agent 整理后复制，或后续单独接入视频专用优化模板。
+   - `grok-imagine-video-1.5` 的参考图仍按后端能力规则必填；无图时 Sub2API 会改写为 `grok-imagine-video`。账号池中只有部分账号支持 1.5，不能只放宽前端校验。
+
+5. 本轮生产故障结论。
+   - `No eligible Grok media accounts` 是 Sub2API 账号池没有可执行视频请求的路由错误，发生在生成前，不是提示词、播放或下载错误。
+   - 生产 `Grok-Heavy` 组账号状态曾显示 active/schedulable，但账号模型映射不同；请求模型必须与实际账号能力匹配。
+   - Agent 中显示长时间“正在识别图片描述”时，通常是生图已完成后额外的视觉描述请求等待；中转站生图使用记录不包含这一步。
+
+6. 本轮提交与部署。
+   - `0bcb3a2`：Grok 图片同源托管、任务重取、推理强度调整。
+   - `d6f0bf0`：视频插件显示名改为“视频插件”。
+   - OVH 当前镜像：`godissogood/nova-image-studio:d6f0bf0`；容器 `healthy`；公网首页和配置 API 返回 `200`；Sub2API 未重启。
+   - 测试：前端 442 项、后端 48 项通过；构建通过；本轮按用户要求跳过浏览器验收。
 
 ### 2026-07-16：品牌文案与关于页精简
 
@@ -173,7 +209,7 @@ curl -i https://img.itoo.me/api/nova/config
 | 2026-07-15 | `da93aae` | `godissogood/nova-image-studio:da93aae` | OVH `healthy`；模型配置即时生效；Agent/工作台使用配置模型；Nova 内部直连 Sub2API；Cloudflare-only 防火墙验收通过 |
 | 2026-07-16 | `b9011a2` | `godissogood/nova-image-studio:b9011a2` | OVH `healthy`；公网首页与配置 API `200`；品牌改为 `iToo Image`；关于页只保留使用方法和隐私条款；桌面/手机与线上 Playwright 验收通过；控制台 0 错误、0 警告 |
 | 2026-07-23 | `71877c7` | `godissogood/nova-image-studio:71877c7` | OVH `healthy`；公网首页 `200`；GPT Image 2 工作台隐藏风格参数；旧客户端的 `style` 在 Nova 入队和 JSON/multipart 请求构造中均被移除；烟囱请求已到达上游但因 `503 No eligible Grok media accounts` 失败，未再出现 `tools[0].style`；Playwright 参数面板验收通过 |
-| 2026-09-14 | `d6f0bf0` | `godissogood/nova-image-studio:d6f0bf0` | OVH `healthy`；视频插件显示名改为“视频插件”，插件 ID 与接口保持不变；公网首页 `200`；Sub2API 未重启。
+| 2026-09-14 | `d6f0bf0` | `godissogood/nova-image-studio:d6f0bf0` | OVH `healthy`；视频插件显示名改为“视频插件”，插件 ID 与接口保持不变；公网首页 `200`；Sub2API 未重启 |
 | 2026-09-14 | `0bcb3a2` | `godissogood/nova-image-studio:0bcb3a2` | OVH `healthy`；公网首页与配置 API `200`；Grok 图片优先请求 `b64_json`，URL 结果改为本站同源地址并通过受限服务端下载；新增任务图片来源持久化和失败后重取；Agent 下载失败保留原任务并提供“重新取回”；Agent 流改为空闲超时，简单提示词整理/图片描述 Low，Agent Medium；前端 442 项、后端 48 项测试通过；按用户要求跳过浏览器验收；未重启 Sub2API |
 
 本次服务器回滚备份：
