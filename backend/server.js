@@ -1356,6 +1356,13 @@ async function generateSingleImage(apiKey, request, taskId, index) {
       const img = expanded[subIdx];
       if (img.startsWith('URL:')) {
         const remoteUrl = img.substring(4);
+        // Grok 图片接口返回的临时 imgen.x.ai 地址在部分网络环境中无法由
+        // Nova 服务端下载（但浏览器可以直接渲染）。保留远程 URL，让前端
+        // 按既有的远程图片缓存/重试流程处理，避免把一次下载失败误报成生成失败。
+        if (request.protocol === 'grok') {
+          diskRefs.push(`URL:${remoteUrl}`);
+          continue;
+        }
         const result = await downloadUrlToDisk(taskId, index, subIdx, remoteUrl);
         diskRefs.push(`URL:${result.httpUrl}`);
       } else {
