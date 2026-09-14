@@ -30,6 +30,10 @@ const EMPTY_SNAPSHOT: PluginRegistrySnapshot = {
   pluginsDir: '',
 };
 
+// 部署中暂不提供的插件仍可保留在仓库里作为参考实现，但不在本站界面展示。
+// 这样不会影响插件运行时的测试，也不会让用户误选当前不可用的上游。
+const HIDDEN_PLUGIN_IDS = new Set(['ccode-h3']);
+
 /**
  * 插件清单在一次会话里基本不变（要变得管理员上服务器放文件并重启），
  * 所以取一次就缓存，多个组件共享同一个 in-flight promise。
@@ -83,7 +87,13 @@ export async function loadPluginRegistry(force = false): Promise<PluginRegistryS
       // 素材格式与体积上限随插件列表一起下发，省一次请求
       applyMediaLimits(data?.mediaLimits);
       const snapshot: PluginRegistrySnapshot = {
-        plugins: Array.isArray(data?.plugins) ? data.plugins : [],
+        plugins: Array.isArray(data?.plugins)
+          ? data.plugins.filter((plugin: unknown) => (
+            plugin
+            && typeof plugin === 'object'
+            && !HIDDEN_PLUGIN_IDS.has(String((plugin as { id?: unknown }).id || ''))
+          ))
+          : [],
         failures: Array.isArray(data?.failures) ? data.failures : [],
         loadedAt: typeof data?.loadedAt === 'string' ? data.loadedAt : '',
         pluginsDir: typeof data?.pluginsDir === 'string' ? data.pluginsDir : '',
