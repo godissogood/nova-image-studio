@@ -37,10 +37,13 @@ import { BackupProgress } from '@/components/BackupProgress';
 import {
   BUILTIN_IMAGE_PRESETS,
   BUILTIN_IMAGE_PRESET_OPTIONS,
+  BUILTIN_TEXT_PRESETS,
+  BUILTIN_TEXT_PRESET_OPTIONS,
   DEFAULT_DEFAULTS,
   DEFAULT_TEXT_MODEL_TEMPLATES,
   generateModelId,
   getDefaultTextModelTemplate,
+  getTextModelTemplate,
   getCompleteImageModels,
   getCompleteTextModels,
   getImageModelOutputSizes,
@@ -51,6 +54,8 @@ import {
   type ImageModelConfig,
   type ProviderProtocol,
   type TextModelConfig,
+  type BuiltinTextPreset,
+  type BuiltinTextPresetId,
 } from '@/lib/nova-models';
 import {
   getTextProviderDescription,
@@ -100,7 +105,7 @@ function createImageModelDraft(): ImageModelConfig {
 }
 
 function createTextModelDraft(): TextModelConfig {
-  const template = getDefaultTextModelTemplate('openai-responses');
+  const template = getTextModelTemplate('gpt-5.4-mini');
   return {
     id: generateModelId('txt'),
     protocol: template.protocol,
@@ -109,6 +114,7 @@ function createTextModelDraft(): TextModelConfig {
     apiKey: '',
     baseUrl: template.baseUrl,
     note: template.note,
+    builtinTemplate: template.id,
   };
 }
 
@@ -125,6 +131,19 @@ const IMAGE_PROVIDER_META: Record<ProviderProtocol, { label: string; className: 
   openai: { label: 'OpenAI', className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' },
   grok: { label: 'Grok', className: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300' },
 };
+
+const TEXT_PROVIDER_META: Record<BuiltinTextPreset['provider'], { label: string; className: string }> = {
+  gpt: { label: 'GPT', className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' },
+  grok: { label: 'Grok', className: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300' },
+  google: { label: 'Google', className: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300' },
+  anthropic: { label: 'Claude', className: 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300' },
+  compatible: { label: '兼容', className: 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300' },
+};
+
+function TextProviderBadge({ provider }: { provider: BuiltinTextPreset['provider'] }) {
+  const meta = TEXT_PROVIDER_META[provider];
+  return <span className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${meta.className}`}>{meta.label}</span>;
+}
 
 function ImageProviderBadge({ protocol }: { protocol: ProviderProtocol }) {
   const meta = IMAGE_PROVIDER_META[protocol];
@@ -287,14 +306,15 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
     setSelectedTextModelId(draft.id);
   };
 
-  const handleApplyTextTemplate = (id: string, protocol: TextProviderProtocol) => {
-    const template = getDefaultTextModelTemplate(protocol);
+  const handleApplyTextTemplate = (id: string, templateId: BuiltinTextPresetId) => {
+    const template = getTextModelTemplate(templateId);
     handleUpdateTextModel(id, {
       protocol: template.protocol,
       name: template.name,
       modelId: template.modelId,
       baseUrl: template.baseUrl,
       note: template.note || getTextProviderDescription(template.protocol),
+      builtinTemplate: template.id,
     });
   };
 
@@ -426,7 +446,12 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
     return { ...option, label: imageModelOptionLabel({ name: option.label, protocol: preset.protocol }) };
   });
   const completeImageOptions = imageModels.filter(isCompleteImageModel).map((model) => ({ value: model.id, label: imageModelOptionLabel(model) }));
-  const completeTextOptions = textModels.filter(isCompleteTextModel).map((model) => ({ value: model.id, label: model.name }));
+  const completeTextOptions = textModels.filter(isCompleteTextModel).map((model) => ({
+    value: model.id,
+    label: model.builtinTemplate && BUILTIN_TEXT_PRESETS[model.builtinTemplate]
+      ? <span className="flex min-w-0 items-center gap-2"><TextProviderBadge provider={BUILTIN_TEXT_PRESETS[model.builtinTemplate].provider} /><span className="truncate">{model.name}</span></span>
+      : model.name,
+  }));
   // 切图的图片编辑只能落在 openai 协议模型上（带 mask 的 /v1/images/edits）
   const sliceCapableImageOptions = imageModels
     .filter((model) => isCompleteImageModel(model) && isSliceCapableImageModel(model))
@@ -636,7 +661,10 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                       onClick={() => setSelectedTextModelId(model.id)}
                       className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${selectedTextModelId === model.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
                     >
-                      <div className="font-medium">{model.name || '未命名模型'}</div>
+                      <div className="flex items-center gap-2 font-medium">
+                        {model.builtinTemplate && BUILTIN_TEXT_PRESETS[model.builtinTemplate] && <TextProviderBadge provider={BUILTIN_TEXT_PRESETS[model.builtinTemplate].provider} />}
+                        <span className="truncate">{model.name || '未命名模型'}</span>
+                      </div>
                       <div className="text-xs text-muted-foreground">{isCompleteTextModel(model) ? '配置完成' : '待补全'}</div>
                     </button>
                   ))}
@@ -645,13 +673,28 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                 {selectedTextModel && (
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">内置模板</label>
+                      <Select
+                        value={selectedTextModel.builtinTemplate || ''}
+                        onValueChange={(value) => handleApplyTextTemplate(selectedTextModel.id, value as BuiltinTextPresetId)}
+                        options={BUILTIN_TEXT_PRESET_OPTIONS.map((option) => {
+                          const preset = BUILTIN_TEXT_PRESETS[option.value];
+                          return {
+                            ...option,
+                            label: <span className="flex min-w-0 items-center gap-2"><TextProviderBadge provider={preset.provider} /><span className="truncate">{preset.name}</span></span>,
+                          };
+                        })}
+                      />
+                    </div>
+                    <div className="space-y-2">
                       <label className="text-xs text-muted-foreground">协议</label>
                       <Select
                         value={selectedTextModel.protocol}
                         onValueChange={(value) => {
                           const protocol = value as TextProviderProtocol;
                           handleUpdateTextModel(selectedTextModel.id, { protocol });
-                          handleApplyTextTemplate(selectedTextModel.id, protocol);
+                          const template = getDefaultTextModelTemplate(protocol);
+                          if (template) handleApplyTextTemplate(selectedTextModel.id, template.id);
                         }}
                         options={[
                           { value: 'openai-responses', label: getTextProviderLabel('openai-responses') },

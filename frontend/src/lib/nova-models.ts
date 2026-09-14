@@ -41,6 +41,30 @@ export interface TextModelConfig {
   apiKey: string;
   baseUrl: string;
   note?: string;
+  /** Optional built-in template id used for display and future capability hints. */
+  builtinTemplate?: BuiltinTextPresetId;
+}
+
+export type BuiltinTextPresetId =
+  | 'gpt-5.4-mini'
+  | 'gpt-5.5'
+  | 'gpt-5.6-sol'
+  | 'gpt-5.6-terra'
+  | 'gpt-6-astra'
+  | 'grok-4.5'
+  | 'grok-4.6'
+  | 'gemini-2.5-flash'
+  | 'claude-sonnet-4'
+  | 'openai-compatible-chat';
+
+export interface BuiltinTextPreset {
+  id: BuiltinTextPresetId;
+  provider: 'gpt' | 'grok' | 'google' | 'anthropic' | 'compatible';
+  protocol: TextProviderProtocol;
+  name: string;
+  modelId: string;
+  baseUrl: string;
+  note: string;
 }
 
 export interface BuiltinImagePreset {
@@ -194,39 +218,70 @@ export const BUILTIN_IMAGE_PRESET_OPTIONS = Object.values(BUILTIN_IMAGE_PRESETS)
   label: preset.name,
 }));
 
+export const BUILTIN_TEXT_PRESETS: Record<BuiltinTextPresetId, BuiltinTextPreset> = {
+  'gpt-5.4-mini': {
+    id: 'gpt-5.4-mini', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 5.4 Mini', modelId: 'gpt-5.4-mini', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
+  },
+  'gpt-5.5': {
+    id: 'gpt-5.5', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 5.5', modelId: 'gpt-5.5', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
+  },
+  'gpt-5.6-sol': {
+    id: 'gpt-5.6-sol', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 5.6 Sol', modelId: 'gpt-5.6-sol', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
+  },
+  'gpt-5.6-terra': {
+    id: 'gpt-5.6-terra', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 5.6 Terra（推荐）', modelId: 'gpt-5.6-terra', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
+  },
+  'gpt-6-astra': {
+    id: 'gpt-6-astra', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 6 Astra', modelId: 'gpt-6-astra', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
+  },
+  'grok-4.5': {
+    id: 'grok-4.5', provider: 'grok', protocol: 'openai-chat-completions', name: 'Grok 4.5', modelId: 'grok-4.5', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-chat-completions'),
+  },
+  'grok-4.6': {
+    id: 'grok-4.6', provider: 'grok', protocol: 'openai-chat-completions', name: 'Grok 4.6（推荐）', modelId: 'grok-4.6', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-chat-completions'),
+  },
+  'gemini-2.5-flash': {
+    id: 'gemini-2.5-flash', provider: 'google', protocol: 'google-gemini', name: 'Gemini 2.5 Flash', modelId: 'gemini-2.5-flash', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('google-gemini'),
+  },
+  'claude-sonnet-4': {
+    id: 'claude-sonnet-4', provider: 'anthropic', protocol: 'anthropic-messages', name: 'Claude Sonnet', modelId: 'claude-sonnet-4-20250514', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('anthropic-messages'),
+  },
+  'openai-compatible-chat': {
+    id: 'openai-compatible-chat', provider: 'compatible', protocol: 'openai-chat-completions', name: 'OpenAI Compatible Chat', modelId: 'gpt-4o-mini', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-chat-completions'),
+  },
+};
+
+export const BUILTIN_TEXT_PRESET_OPTIONS = Object.values(BUILTIN_TEXT_PRESETS).map((preset) => ({
+  value: preset.id,
+  label: preset.name,
+}));
+
+/** Backwards-compatible template list used by existing callers. */
 export const DEFAULT_TEXT_MODEL_TEMPLATES = [
-  {
-    protocol: 'openai-responses' as const,
-    name: 'GPT 5.4 Mini',
-    modelId: 'gpt-5.4-mini',
-    baseUrl: ITOO_API_BASE_URL,
-    note: getTextProviderDescription('openai-responses'),
-  },
-  {
-    protocol: 'google-gemini' as const,
-    name: 'Gemini 2.5 Flash',
-    modelId: 'gemini-2.5-flash',
-    baseUrl: ITOO_API_BASE_URL,
-    note: getTextProviderDescription('google-gemini'),
-  },
-  {
-    protocol: 'anthropic-messages' as const,
-    name: 'Claude Sonnet',
-    modelId: 'claude-sonnet-4-20250514',
-    baseUrl: ITOO_API_BASE_URL,
-    note: getTextProviderDescription('anthropic-messages'),
-  },
-  {
-    protocol: 'openai-chat-completions' as const,
-    name: 'OpenAI Compatible Chat',
-    modelId: 'gpt-4o-mini',
-    baseUrl: ITOO_API_BASE_URL,
-    note: getTextProviderDescription('openai-chat-completions'),
-  },
+  BUILTIN_TEXT_PRESETS['gpt-5.4-mini'],
+  BUILTIN_TEXT_PRESETS['gpt-5.5'],
+  BUILTIN_TEXT_PRESETS['gpt-5.6-sol'],
+  BUILTIN_TEXT_PRESETS['gpt-5.6-terra'],
+  BUILTIN_TEXT_PRESETS['gpt-6-astra'],
+  BUILTIN_TEXT_PRESETS['grok-4.5'],
+  BUILTIN_TEXT_PRESETS['grok-4.6'],
+  BUILTIN_TEXT_PRESETS['gemini-2.5-flash'],
+  BUILTIN_TEXT_PRESETS['claude-sonnet-4'],
+  BUILTIN_TEXT_PRESETS['openai-compatible-chat'],
 ];
 
 export function getDefaultTextModelTemplate(protocol: TextProviderProtocol) {
-  return DEFAULT_TEXT_MODEL_TEMPLATES.find((item) => item.protocol === protocol) || DEFAULT_TEXT_MODEL_TEMPLATES[0];
+  const defaultId: Record<TextProviderProtocol, BuiltinTextPresetId> = {
+    'openai-responses': 'gpt-5.4-mini',
+    'openai-chat-completions': 'openai-compatible-chat',
+    'anthropic-messages': 'claude-sonnet-4',
+    'google-gemini': 'gemini-2.5-flash',
+  };
+  return BUILTIN_TEXT_PRESETS[defaultId[protocol]];
+}
+
+export function getTextModelTemplate(id: BuiltinTextPresetId) {
+  return BUILTIN_TEXT_PRESETS[id];
 }
 
 export const DEFAULT_DEFAULTS: DefaultModels = {
@@ -302,6 +357,9 @@ function normalizeTextModelConfig(raw: Partial<TextModelConfig>): TextModelConfi
     apiKey: String(raw.apiKey || '').trim(),
     baseUrl: ITOO_API_BASE_URL,
     note: typeof raw.note === 'string' ? raw.note : (template.note || getTextProviderDescription(protocol)),
+    builtinTemplate: raw.builtinTemplate && raw.builtinTemplate in BUILTIN_TEXT_PRESETS
+      ? raw.builtinTemplate as BuiltinTextPresetId
+      : undefined,
   };
 }
 
