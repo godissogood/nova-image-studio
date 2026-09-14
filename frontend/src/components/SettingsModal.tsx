@@ -40,7 +40,6 @@ import {
   BUILTIN_TEXT_PRESETS,
   BUILTIN_TEXT_PRESET_OPTIONS,
   DEFAULT_DEFAULTS,
-  DEFAULT_TEXT_MODEL_TEMPLATES,
   generateModelId,
   getDefaultTextModelTemplate,
   getTextModelTemplate,

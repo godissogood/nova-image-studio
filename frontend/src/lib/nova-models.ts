@@ -349,6 +349,10 @@ function normalizeTextModelConfig(raw: Partial<TextModelConfig>): TextModelConfi
   if (!id) return null;
   const protocol = isTextProviderProtocol(raw.protocol) ? raw.protocol : 'openai-responses';
   const template = getDefaultTextModelTemplate(protocol);
+  const templateByModelId = Object.values(BUILTIN_TEXT_PRESETS).find((item) => item.modelId === String(raw.modelId || '').trim());
+  const builtinTemplate = raw.builtinTemplate && raw.builtinTemplate in BUILTIN_TEXT_PRESETS
+    ? raw.builtinTemplate as BuiltinTextPresetId
+    : templateByModelId?.id;
   return {
     id,
     protocol,
@@ -357,9 +361,7 @@ function normalizeTextModelConfig(raw: Partial<TextModelConfig>): TextModelConfi
     apiKey: String(raw.apiKey || '').trim(),
     baseUrl: ITOO_API_BASE_URL,
     note: typeof raw.note === 'string' ? raw.note : (template.note || getTextProviderDescription(protocol)),
-    builtinTemplate: raw.builtinTemplate && raw.builtinTemplate in BUILTIN_TEXT_PRESETS
-      ? raw.builtinTemplate as BuiltinTextPresetId
-      : undefined,
+    builtinTemplate,
   };
 }
 
