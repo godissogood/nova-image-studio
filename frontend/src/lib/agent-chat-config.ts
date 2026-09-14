@@ -5,7 +5,7 @@
 import type { GptImageBackground, GptImageQuality, GptImageStyle } from '@/lib/model-capabilities';
 
 // 文本模型的兼容值仅用于旧会话迁移；图片模型始终从注册表读取。
-export const AGENT_TEXT_MODEL_FALLBACK = 'gpt-5.4-mini';
+export const AGENT_TEXT_MODEL_FALLBACK = 'gpt-5.5';
 
 // ===== 上下文系统数据结构 =====
 

@@ -104,7 +104,7 @@ function createImageModelDraft(): ImageModelConfig {
 }
 
 function createTextModelDraft(): TextModelConfig {
-  const template = getTextModelTemplate('gpt-5.4-mini');
+  const template = getTextModelTemplate('gpt-5.5');
   return {
     id: generateModelId('txt'),
     protocol: template.protocol,

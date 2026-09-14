@@ -2166,7 +2166,7 @@ export function CanvasEditor({ projectId, onBack, onRequireApiKey, showToast, sh
         textModel.protocol,
         textModel.modelId,
         [{ type: "text", text: `用户输入：\n${prompt}` }],
-        { stream: true, systemInstruction: systemPrompt, reasoningEffort: "low" }
+        { stream: true, systemInstruction: systemPrompt, reasoningEffort: "high" }
       );
 
       const response = await fetch("/api/nova/proxy/text", {
@@ -2268,7 +2268,7 @@ export function CanvasEditor({ projectId, onBack, onRequireApiKey, showToast, sh
           textModel.protocol,
           textModel.modelId,
           [{ type: "text", text: `用户输入：\n${userPrompt}` }],
-          { stream: true, systemInstruction: systemPrompt, reasoningEffort: "low" }
+          { stream: true, systemInstruction: systemPrompt, reasoningEffort: "high" }
         );
 
         const response = await fetch("/api/nova/proxy/text", {

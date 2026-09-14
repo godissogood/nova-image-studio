@@ -9,7 +9,7 @@ import {
 import type { TextProviderProtocol } from '@/lib/nova-text-protocol';
 import { readSseStream } from '@/lib/sse-stream-parser';
 
-const OPTIMIZE_MODEL = 'gpt-5.4-mini';
+const OPTIMIZE_MODEL = 'gpt-5.5';
 const OPTIMIZE_TIMEOUT_MS = 30_000;
 const OPTIMIZE_MAX_ATTEMPTS = 2;
 
@@ -187,7 +187,7 @@ async function runAttempt(
     protocol,
     actualModel,
     parts,
-    { stream: true, reasoningEffort: 'low' }
+    { stream: true, reasoningEffort: 'high' }
   );
 
   const timeoutId = window.setTimeout(() => {

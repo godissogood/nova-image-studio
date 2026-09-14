@@ -46,7 +46,6 @@ export interface TextModelConfig {
 }
 
 export type BuiltinTextPresetId =
-  | 'gpt-5.4-mini'
   | 'gpt-5.5'
   | 'gpt-5.6-sol'
   | 'gpt-5.6-terra'
@@ -219,9 +218,6 @@ export const BUILTIN_IMAGE_PRESET_OPTIONS = Object.values(BUILTIN_IMAGE_PRESETS)
 }));
 
 export const BUILTIN_TEXT_PRESETS: Record<BuiltinTextPresetId, BuiltinTextPreset> = {
-  'gpt-5.4-mini': {
-    id: 'gpt-5.4-mini', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 5.4 Mini', modelId: 'gpt-5.4-mini', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
-  },
   'gpt-5.5': {
     id: 'gpt-5.5', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 5.5', modelId: 'gpt-5.5', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
   },
@@ -258,7 +254,6 @@ export const BUILTIN_TEXT_PRESET_OPTIONS = Object.values(BUILTIN_TEXT_PRESETS).m
 
 /** Backwards-compatible template list used by existing callers. */
 export const DEFAULT_TEXT_MODEL_TEMPLATES = [
-  BUILTIN_TEXT_PRESETS['gpt-5.4-mini'],
   BUILTIN_TEXT_PRESETS['gpt-5.5'],
   BUILTIN_TEXT_PRESETS['gpt-5.6-sol'],
   BUILTIN_TEXT_PRESETS['gpt-5.6-terra'],
@@ -272,7 +267,7 @@ export const DEFAULT_TEXT_MODEL_TEMPLATES = [
 
 export function getDefaultTextModelTemplate(protocol: TextProviderProtocol) {
   const defaultId: Record<TextProviderProtocol, BuiltinTextPresetId> = {
-    'openai-responses': 'gpt-5.4-mini',
+    'openai-responses': 'gpt-5.5',
     'openai-chat-completions': 'openai-compatible-chat',
     'anthropic-messages': 'claude-sonnet-4',
     'google-gemini': 'gemini-2.5-flash',

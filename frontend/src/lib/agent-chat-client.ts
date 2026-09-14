@@ -394,7 +394,7 @@ async function requestImageDescription(
       { type: 'text', text: AGENT_IMAGE_DESCRIBE_PROMPT },
       { type: 'image', imageDataUrl },
     ],
-    { reasoningEffort: 'low' }
+    { reasoningEffort: 'high' }
   );
 
   const response = await fetch('/api/nova/proxy/text', {
@@ -499,7 +499,7 @@ function buildAgentRequestBody(
   return {
     model,
     stream: true,
-    reasoning: { effort: 'medium' as const, summary: 'detailed' as const },
+    reasoning: { effort: 'high' as const, summary: 'detailed' as const },
     instructions,
     tools: enableNativeWebSearch
       ? [PROPOSE_IMAGE_ACTION_TOOL, { type: 'web_search' as const }]

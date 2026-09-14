@@ -8,7 +8,7 @@ import {
 import type { TextProviderProtocol } from '@/lib/nova-text-protocol';
 import { ITOO_API_BASE_URL } from '@/lib/itoo-config';
 
-const ASSET_METADATA_MODEL = 'gpt-5.4-mini';
+const ASSET_METADATA_MODEL = 'gpt-5.5';
 
 export interface AssetMetadataSuggestion {
   name: string;
@@ -66,7 +66,7 @@ export async function generateAssetMetadata(input: GenerateAssetMetadataInput): 
       { type: 'text', text: prompt },
       { type: 'image', imageDataUrl: input.imageDataUrl },
     ],
-    { reasoningEffort: 'low' }
+    { reasoningEffort: 'high' }
   );
 
   const response = await fetch('/api/nova/proxy/text', {
