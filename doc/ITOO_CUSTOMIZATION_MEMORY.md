@@ -173,7 +173,8 @@ curl -i https://img.itoo.me/api/nova/config
 | 2026-07-15 | `da93aae` | `godissogood/nova-image-studio:da93aae` | OVH `healthy`；模型配置即时生效；Agent/工作台使用配置模型；Nova 内部直连 Sub2API；Cloudflare-only 防火墙验收通过 |
 | 2026-07-16 | `b9011a2` | `godissogood/nova-image-studio:b9011a2` | OVH `healthy`；公网首页与配置 API `200`；品牌改为 `iToo Image`；关于页只保留使用方法和隐私条款；桌面/手机与线上 Playwright 验收通过；控制台 0 错误、0 警告 |
 | 2026-07-23 | `71877c7` | `godissogood/nova-image-studio:71877c7` | OVH `healthy`；公网首页 `200`；GPT Image 2 工作台隐藏风格参数；旧客户端的 `style` 在 Nova 入队和 JSON/multipart 请求构造中均被移除；烟囱请求已到达上游但因 `503 No eligible Grok media accounts` 失败，未再出现 `tools[0].style`；Playwright 参数面板验收通过 |
-| 2026-09-14 | `d6f0bf0` | `godissogood/nova-image-studio:d6f0bf0` | OVH `healthy`；视频插件显示名改为“视频插件”，插件 ID 与接口保持不变；公网首页 `200`；Sub2API 未重启。`r`n| 2026-09-14 | `0bcb3a2` | `godissogood/nova-image-studio:0bcb3a2` | OVH `healthy`；公网首页与配置 API `200`；Grok 图片优先请求 `b64_json`，URL 结果改为本站同源地址并通过受限服务端下载；新增任务图片来源持久化和失败后重取；Agent 下载失败保留原任务并提供“重新取回”；Agent 流改为空闲超时，简单提示词整理/图片描述 Low，Agent Medium；前端 442 项、后端 48 项测试通过；按用户要求跳过浏览器验收；未重启 Sub2API |
+| 2026-09-14 | `d6f0bf0` | `godissogood/nova-image-studio:d6f0bf0` | OVH `healthy`；视频插件显示名改为“视频插件”，插件 ID 与接口保持不变；公网首页 `200`；Sub2API 未重启。
+| 2026-09-14 | `0bcb3a2` | `godissogood/nova-image-studio:0bcb3a2` | OVH `healthy`；公网首页与配置 API `200`；Grok 图片优先请求 `b64_json`，URL 结果改为本站同源地址并通过受限服务端下载；新增任务图片来源持久化和失败后重取；Agent 下载失败保留原任务并提供“重新取回”；Agent 流改为空闲超时，简单提示词整理/图片描述 Low，Agent Medium；前端 442 项、后端 48 项测试通过；按用户要求跳过浏览器验收；未重启 Sub2API |
 
 本次服务器回滚备份：
 
