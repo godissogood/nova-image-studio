@@ -8,9 +8,10 @@ import {
 } from '@/lib/nova-proxy-text';
 import type { TextProviderProtocol } from '@/lib/nova-text-protocol';
 import { readSseStream } from '@/lib/sse-stream-parser';
+import { AgentRequestTimeoutError, createIdleTimeoutSignal } from '@/lib/stream-reliability';
 
 const OPTIMIZE_MODEL = 'gpt-5.5';
-const OPTIMIZE_TIMEOUT_MS = 30_000;
+const OPTIMIZE_TIMEOUT_MS = 120_000;
 const OPTIMIZE_MAX_ATTEMPTS = 2;
 
 export type PromptOptimizeMode = 'text-to-image' | 'image-to-image' | 'gif' | 'agent' | 'canvas-prompt-gallery-import' | 'canvas-prompt-gallery-config';
@@ -145,14 +146,18 @@ async function runWithRetry(
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= OPTIMIZE_MAX_ATTEMPTS; attempt++) {
     if (signal.aborted) return;
+    let receivedOutput = false;
     try {
-      await runAttempt(baseUrl, input, callbacks, controller);
+      await runAttempt(baseUrl, input, {
+        ...callbacks,
+        onDelta: token => { receivedOutput = true; callbacks.onDelta(token); },
+      }, controller);
       return;
     } catch (err) {
       if (signal.aborted) return;
       const normalized = normalizeError(err);
       lastError = normalized;
-      if (attempt >= OPTIMIZE_MAX_ATTEMPTS || !isRetryable(err)) {
+      if (receivedOutput || err instanceof AgentRequestTimeoutError || attempt >= OPTIMIZE_MAX_ATTEMPTS || !isRetryable(err)) {
         throw normalized;
       }
     }
@@ -170,8 +175,6 @@ async function runAttempt(
   const protocol = (configured?.protocol || 'openai-responses') as TextProviderProtocol;
   const actualModel = configured?.modelId || input.model || OPTIMIZE_MODEL;
   const actualBaseUrl = configured?.baseUrl || baseUrl;
-  const signal = controller.signal;
-
   let userText = `${SYSTEM_PROMPTS[input.mode]}\n\n---\n\n`;
   if (input.context) {
     userText += `${input.context}\n\n---\n\n`;
@@ -187,14 +190,11 @@ async function runAttempt(
     protocol,
     actualModel,
     parts,
-    { stream: true, reasoningEffort: 'high' }
+    { stream: true, reasoningEffort: 'low' }
   );
 
-  const timeoutId = window.setTimeout(() => {
-    if (!signal.aborted) {
-      controller.abort(new DOMException('优化请求超时', 'TimeoutError'));
-    }
-  }, OPTIMIZE_TIMEOUT_MS);
+  const idle = createIdleTimeoutSignal(controller.signal, OPTIMIZE_TIMEOUT_MS);
+  const signal = idle.signal;
 
   try {
     const response = await fetch('/api/nova/proxy/text', {
@@ -242,11 +242,14 @@ async function runAttempt(
       }
 
       accumulated = handleSimpleTextStreamEvent(protocol, payload, event.event || '', accumulated, callbacks.onDelta, fireDone);
-    });
+    }, idle.touch);
 
+    if (signal.aborted) throw signal.reason;
     fireDone();
+  } catch (error) {
+    throw signal.aborted ? signal.reason : error;
   } finally {
-    window.clearTimeout(timeoutId);
+    idle.cleanup();
   }
 }
 

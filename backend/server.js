@@ -12,6 +12,7 @@ const pluginRegistry = require('./plugin-runtime/registry');
 const pluginExecutor = require('./plugin-runtime/executor');
 const { validateAndNormalizeInput, InputError } = require('./plugin-runtime/input');
 const { createMediaStore } = require('./plugin-runtime/media');
+const { createGrokImageDownloader, detectImageType } = require('./grok-image-download');
 
 const ENV_FILE_PATH = path.join(process.cwd(), '.env');
 const TASK_STATUS = {
@@ -147,6 +148,10 @@ const IS_DEV = process.env.NODE_ENV !== 'production';
 const STATIC_DIR = path.join(__dirname, '..', 'frontend', 'out');
 const IMAGE_DIR = process.env.NOVA_IMAGE_DIR || path.join(__dirname, 'nova-images');
 const taskRefImages = new Map();
+const imageDownloads = new Map();
+const grokImageDownloader = createGrokImageDownloader({
+  getMediaBaseUrl: () => getRuntimeEnv().NOVA_GROK_MEDIA_BASE_URL || '',
+});
 
 const app = IS_DEV ? next({ dev: IS_DEV, hostname: HOSTNAME, port: PORT, dir: path.join(__dirname, '..', 'frontend') }) : null;
 const handle = app ? app.getRequestHandler() : null;
@@ -407,7 +412,86 @@ function saveImageToDisk(taskId, itemIndex, subIndex, imageBuffer, mimeType) {
   const fileName = `${taskId}-${itemIndex}-${subIndex}.${ext}`;
   const filePath = path.join(IMAGE_DIR, fileName);
   fs.writeFileSync(filePath, imageBuffer);
-  return { filePath, httpUrl: `/api/nova/images/${taskId}/${itemIndex}` };
+  return { filePath, httpUrl: taskImageUrl(taskId, itemIndex, subIndex) };
+}
+
+function taskImageUrl(taskId, itemIndex, subIndex = 0) {
+  return `/api/nova/images/${taskId}/${itemIndex}${subIndex ? `/${subIndex}` : ''}`;
+}
+
+function rememberGrokImageSource(taskId, itemIndex, subIndex, sourceUrl) {
+  db.prepare(`INSERT OR IGNORE INTO task_image_sources (task_id, item_index, sub_index, source_url)
+    VALUES (?, ?, ?, ?)`).run(taskId, itemIndex, subIndex, sourceUrl);
+  return `URL:${taskImageUrl(taskId, itemIndex, subIndex)}`;
+}
+
+// Upgrade still-retained pre-fix tasks when they are read, including after a restart.
+// Raw upstream URLs remain server-side; browsers only receive this site's image URL.
+function normalizeLegacyGrokImages(task, result) {
+  if (!Array.isArray(result?.images) || !result.images.some(ref => typeof ref === 'string' && /^URL:https?:\/\//.test(ref))
+    || parseJsonSafely(task.request_json)?.protocol !== 'grok') return result;
+  const replacements = new Map();
+  const items = db.prepare('SELECT item_index, image_data FROM task_items WHERE task_id = ? ORDER BY item_index').all(task.id);
+  db.transaction(() => {
+    for (const item of items) {
+      const refs = parseJsonSafely(item.image_data);
+      if (!Array.isArray(refs)) continue;
+      const normalized = refs.map((ref, subIndex) => {
+        if (typeof ref !== 'string' || !/^URL:https?:\/\//.test(ref)) return ref;
+        const local = rememberGrokImageSource(task.id, item.item_index, subIndex, ref.slice(4));
+        replacements.set(ref, local);
+        return local;
+      });
+      if (normalized.some((ref, index) => ref !== refs[index])) {
+        db.prepare('UPDATE task_items SET image_data = ? WHERE task_id = ? AND item_index = ?')
+          .run(JSON.stringify(normalized), task.id, item.item_index);
+      }
+    }
+    if (replacements.size) {
+      result = { ...result, images: result.images.map(ref => replacements.get(ref) || ref) };
+      db.prepare('UPDATE tasks SET result_json = ? WHERE id = ?').run(JSON.stringify(result), task.id);
+    }
+  })();
+  return result;
+}
+
+function findTaskImageFile(taskId, itemIndex, subIndex) {
+  for (const ext of ['png', 'jpg', 'webp']) {
+    const candidate = path.join(IMAGE_DIR, `${taskId}-${itemIndex}-${subIndex}.${ext}`);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+async function retrieveGrokTaskImage(taskId, itemIndex, subIndex) {
+  const source = db.prepare(`SELECT s.source_url FROM task_image_sources s JOIN tasks t ON t.id = s.task_id
+    WHERE s.task_id = ? AND s.item_index = ? AND s.sub_index = ? AND t.status = 'completed'
+    AND (t.expires_at IS NULL OR t.expires_at > ?)`).get(taskId, itemIndex, subIndex, new Date().toISOString());
+  if (!source) return null;
+  const key = `${taskId}-${itemIndex}-${subIndex}`;
+  if (imageDownloads.has(key)) return imageDownloads.get(key);
+  const pending = (async () => {
+    const { buffer, mimeType } = await grokImageDownloader.download(source.source_url);
+    // A deleted/expired task must not recreate an orphaned file after downloading.
+    const stillAvailable = db.prepare('SELECT id FROM tasks WHERE id = ? AND (expires_at IS NULL OR expires_at > ?)')
+      .get(taskId, new Date().toISOString());
+    if (!stillAvailable) return null;
+    return saveImageToDisk(taskId, itemIndex, subIndex, buffer, mimeType).filePath;
+  })().finally(() => imageDownloads.delete(key));
+  imageDownloads.set(key, pending);
+  return pending;
+}
+
+function cacheCompletedGrokImages(taskId) {
+  const sources = db.prepare('SELECT item_index, sub_index FROM task_image_sources WHERE task_id = ?').all(taskId);
+  for (const source of sources) {
+    const pending = retrieveGrokTaskImage(taskId, source.item_index, source.sub_index)
+      .catch(() => {
+        console.warn(`[image-storage] 图片后台缓存未完成，保留任务供重新取回: taskId=${taskId}, index=${source.item_index}`);
+      })
+      .finally(() => runningTaskPromises.delete(pending));
+    runningTaskPromises.add(pending);
+  }
 }
 
 async function downloadUrlToDisk(taskId, itemIndex, subIndex, imageUrl) {
@@ -491,6 +575,13 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
     CREATE INDEX IF NOT EXISTS idx_tasks_expires_at ON tasks(expires_at);
     CREATE INDEX IF NOT EXISTS idx_task_items_task_id ON task_items(task_id);
+    CREATE TABLE IF NOT EXISTS task_image_sources (
+      task_id TEXT NOT NULL,
+      item_index INTEGER NOT NULL,
+      sub_index INTEGER NOT NULL,
+      source_url TEXT NOT NULL,
+      PRIMARY KEY (task_id, item_index, sub_index)
+    );
   `);
 
   // 插件素材表（plugin_media）与任务表同库，任务清理即素材清理
@@ -1167,7 +1258,10 @@ function createGrokImageRequestInit(apiKey, request, options = {}) {
     const payload = {
       model: request.model,
       prompt,
-      response_format: 'url',
+      // Prefer inline bytes so the relay never exposes a browser-inaccessible
+      // temporary URL. Older upstreams may ignore this and return URL; those
+      // values are still handled by the restricted same-origin downloader.
+      response_format: 'b64_json',
       ...(stream ? { stream: true } : {}),
       ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
       ...(resolution ? { resolution } : {}),
@@ -1186,7 +1280,7 @@ function createGrokImageRequestInit(apiKey, request, options = {}) {
   const payload = {
     model: request.model,
     prompt,
-    response_format: 'url',
+    response_format: 'b64_json',
     ...(stream ? { stream: true } : {}),
     ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
     ...(resolution ? { resolution } : {}),
@@ -1279,7 +1373,7 @@ function extractGeminiImagePayload(data) {
   return inlineData.data;
 }
 
-async function generateNovaGeminiImage(apiKey, request, options = {}) {
+async function generateNovaGeminiImage(apiKey, request, _options = {}) {
   const baseUrl = resolveConfiguredUpstreamBaseUrl('google');
   const parts = [
     { text: request.prompt },
@@ -1356,18 +1450,17 @@ async function generateSingleImage(apiKey, request, taskId, index) {
       const img = expanded[subIdx];
       if (img.startsWith('URL:')) {
         const remoteUrl = img.substring(4);
-        // Grok 图片接口返回的临时 imgen.x.ai 地址在部分网络环境中无法由
-        // Nova 服务端下载（但浏览器可以直接渲染）。保留远程 URL，让前端
-        // 按既有的远程图片缓存/重试流程处理，避免把一次下载失败误报成生成失败。
+        // Record generation success immediately. The same-origin image route
+        // downloads/caches the server-held source and can retry without generating.
         if (request.protocol === 'grok') {
-          diskRefs.push(`URL:${remoteUrl}`);
+          diskRefs.push(rememberGrokImageSource(taskId, index, subIdx, remoteUrl));
           continue;
         }
         const result = await downloadUrlToDisk(taskId, index, subIdx, remoteUrl);
         diskRefs.push(`URL:${result.httpUrl}`);
       } else {
         const buffer = Buffer.from(img, 'base64');
-        const result = saveImageToDisk(taskId, index, subIdx, buffer, 'image/png');
+        const result = saveImageToDisk(taskId, index, subIdx, buffer, detectImageType(buffer) || 'image/png');
         diskRefs.push(`URL:${result.httpUrl}`);
       }
     }
@@ -1441,6 +1534,7 @@ async function runTask(taskId) {
   cleanupTaskRuntimeState(taskId);
   broadcastTask(taskId);
   broadcastQueueStatus();
+  if (request.protocol === 'grok' && images.length > 0) cacheCompletedGrokImages(taskId);
 }
 
 // ===== 插件任务 =====
@@ -1779,7 +1873,8 @@ function serializeTask(task) {
   if (task.expires_at && Date.parse(task.expires_at) <= Date.now()) {
     return { id: task.id, status: 'expired', error: '该任务已超出取回时间' };
   }
-  const result = task.result_json ? JSON.parse(task.result_json) : undefined;
+  let result = task.result_json ? JSON.parse(task.result_json) : undefined;
+  result = normalizeLegacyGrokImages(task, result);
   // 插件任务附带上游实时进度。status 仍是本机队列状态（排队中 = 等本机并发名额），
   // upstreamStatus 才是上游那边的状态，两者不是一回事，都要给前端。
   const live = task.mode === 'plugin' ? pluginTaskProgress.get(task.id) : undefined;
@@ -1817,6 +1912,7 @@ function deleteTask(taskId) {
   pluginMedia.deleteTaskMedia(taskId);
   pluginTaskCache.delete(taskId);
   const tx = db.transaction(() => {
+    db.prepare('DELETE FROM task_image_sources WHERE task_id = ?').run(taskId);
     db.prepare('DELETE FROM task_items WHERE task_id = ?').run(taskId);
     db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
   });
@@ -2192,34 +2288,18 @@ async function handleApi(req, res, pathname, searchParams) {
       return true;
     }
 
-    const imageMatch = apiPathname.match(/^\/api\/nova\/images\/([^/]+)\/(\d+)$/);
+    const imageMatch = apiPathname.match(/^\/api\/nova\/images\/([^/]+)\/(\d+)(?:\/(\d+))?$/);
     if (req.method === 'GET' && imageMatch) {
       const taskId = imageMatch[1];
       const index = Number(imageMatch[2]);
-      if (!/^[a-zA-Z0-9-]+$/.test(taskId)) {
+      const subIndex = Number(imageMatch[3] || 0);
+      if (!/^[a-zA-Z0-9-]+$/.test(taskId) || !Number.isSafeInteger(index) || !Number.isSafeInteger(subIndex)) {
         sendJson(res, 400, { error: 'Invalid taskId' });
         return true;
       }
       try {
-        if (!fs.existsSync(IMAGE_DIR)) {
-          sendJson(res, 404, { error: 'Not Found' });
-          return true;
-        }
-        // 常见情况：subIndex=0、扩展名 png/jpg/webp，直接拼路径命中，
-        // 避免对整个 IMAGE_DIR 做同步 readdir 全目录扫描（随图片数线性变慢）。
-        let filePath = null;
-        for (const ext of ['png', 'jpg', 'webp']) {
-          const candidate = path.join(IMAGE_DIR, `${taskId}-${index}-0.${ext}`);
-          if (fs.existsSync(candidate)) { filePath = candidate; break; }
-        }
-        // 兜底：扩展名异常或存在多子图（极少）时才回退到目录扫描。
-        if (!filePath) {
-          const prefix = `${taskId}-${index}-`;
-          const files = fs.readdirSync(IMAGE_DIR)
-            .filter(name => name.startsWith(prefix))
-            .sort();
-          if (files.length > 0) filePath = path.join(IMAGE_DIR, files[0]);
-        }
+        let filePath = findTaskImageFile(taskId, index, subIndex);
+        if (!filePath) filePath = await retrieveGrokTaskImage(taskId, index, subIndex);
         if (!filePath) {
           sendJson(res, 404, { error: 'Not Found' });
           return true;
@@ -2229,9 +2309,12 @@ async function handleApi(req, res, pathname, searchParams) {
           'Content-Type': getContentType(filePath),
           'Content-Length': stat.size,
           'Cache-Control': 'private, max-age=3600',
+          'X-Content-Type-Options': 'nosniff',
         });
-      } catch {
-        sendJson(res, 404, { error: 'Not Found' });
+      } catch (error) {
+        // Download errors never change generation status or remove its stored source.
+        console.warn(`[image-storage] 图片取回失败: taskId=${taskId}, index=${index}, subIndex=${subIndex}`);
+        sendJson(res, 502, { error: `图片已生成，取回失败。${normalizeError(error)}`, code: 'IMAGE_RETRIEVAL_FAILED' });
       }
       return true;
     }

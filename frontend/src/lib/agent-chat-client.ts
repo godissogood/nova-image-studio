@@ -22,17 +22,11 @@ import {
 } from '@/lib/nova-proxy-text';
 import type { TextProviderProtocol } from '@/lib/nova-text-protocol';
 import { readSseStream } from '@/lib/sse-stream-parser';
+import { AgentRequestTimeoutError, createIdleTimeoutSignal } from '@/lib/stream-reliability';
 
 const AGENT_GPT_REQUEST_MAX_ATTEMPTS = 3;
-const AGENT_CHAT_ATTEMPT_TIMEOUT_MS = 45_000;
-const AGENT_IMAGE_DESCRIBE_ATTEMPT_TIMEOUT_MS = 20_000;
-
-class AgentRequestTimeoutError extends Error {
-  constructor(timeoutMs: number) {
-    super(`请求超过 ${Math.round(timeoutMs / 1000)} 秒未响应`);
-    this.name = 'AgentRequestTimeoutError';
-  }
-}
+const AGENT_CHAT_IDLE_TIMEOUT_MS = 180_000;
+const AGENT_IMAGE_DESCRIBE_ATTEMPT_TIMEOUT_MS = 60_000;
 
 export interface AgentCatalogEntry {
   imgId: string;
@@ -275,22 +269,30 @@ async function runAgentStreamWithRetry(
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= AGENT_GPT_REQUEST_MAX_ATTEMPTS; attempt++) {
     if (signal.aborted) return;
+    const idle = createIdleTimeoutSignal(signal, AGENT_CHAT_IDLE_TIMEOUT_MS);
+    let receivedOutput = false;
     try {
-      await runAttemptWithTimeout(
-        attemptSignal => runAgentStream(baseUrl, input, callbacks, attemptSignal),
-        signal,
-        AGENT_CHAT_ATTEMPT_TIMEOUT_MS,
-      );
+      await runAgentStream(baseUrl, input, {
+        ...callbacks,
+        onDelta: token => { receivedOutput = true; callbacks.onDelta(token); },
+        onReasoning: token => { receivedOutput = true; callbacks.onReasoning(token); },
+      }, idle.signal, idle.touch);
+      if (idle.signal.aborted) throw idle.signal.reason;
       return;
     } catch (err) {
       if (signal.aborted) return;
-      const normalized = normalizeStreamError(err);
+      const cause = idle.signal.aborted ? idle.signal.reason : err;
+      // A timed-out or partly streamed request may still be billed upstream.
+      if (cause instanceof AgentRequestTimeoutError || receivedOutput) throw cause;
+      const normalized = normalizeStreamError(cause);
       lastError = normalized;
-      if (attempt >= AGENT_GPT_REQUEST_MAX_ATTEMPTS || !isRetryableAgentError(err)) {
+      if (attempt >= AGENT_GPT_REQUEST_MAX_ATTEMPTS || !isRetryableAgentError(cause)) {
         throw normalized;
       }
       callbacks.onResetAttempt?.();
       callbacks.onRetry?.(attempt + 1, AGENT_GPT_REQUEST_MAX_ATTEMPTS, normalized);
+    } finally {
+      idle.cleanup();
     }
   }
   throw lastError || new Error('模型请求失败');
@@ -301,6 +303,7 @@ async function runAgentStream(
   input: StreamAgentInput,
   callbacks: StreamAgentCallbacks,
   signal: AbortSignal,
+  onActivity: () => void,
 ): Promise<void> {
   const instructions = buildInstructions(input.catalog, input.modelCatalog);
   const body = buildAgentRequestBody(input.protocol, input.model || AGENT_TEXT_MODEL_FALLBACK, input.history, instructions, Boolean(input.webSearch));
@@ -359,8 +362,9 @@ async function runAgentStream(
       toolArgsByIndex,
       fireDone,
     });
-  });
+  }, onActivity);
 
+  if (signal.aborted) throw signal.reason;
   fireDone();
 }
 
@@ -394,7 +398,7 @@ async function requestImageDescription(
       { type: 'text', text: AGENT_IMAGE_DESCRIBE_PROMPT },
       { type: 'image', imageDataUrl },
     ],
-    { reasoningEffort: 'high' }
+    { reasoningEffort: 'low' }
   );
 
   const response = await fetch('/api/nova/proxy/text', {
@@ -431,7 +435,7 @@ function buildAgentRequestBody(
     return {
       model,
       stream: true,
-      reasoning_effort: 'high' as const,
+      reasoning_effort: 'medium' as const,
       messages: buildChatMessages(history, instructions),
       tools: [
         {
@@ -458,7 +462,7 @@ function buildAgentRequestBody(
         display: 'summarized' as const,
       },
       output_config: {
-        effort: 'high' as const,
+        effort: 'medium' as const,
       },
       messages: buildAnthropicMessages(history),
       tools: [
@@ -489,7 +493,7 @@ function buildAgentRequestBody(
       ],
       generationConfig: {
         thinkingConfig: {
-          thinkingBudget: -1,
+          thinkingBudget: 4096,
           includeThoughts: true,
         },
       },
@@ -499,7 +503,7 @@ function buildAgentRequestBody(
   return {
     model,
     stream: true,
-    reasoning: { effort: 'high' as const, summary: 'detailed' as const },
+    reasoning: { effort: 'medium' as const, summary: 'detailed' as const },
     instructions,
     tools: enableNativeWebSearch
       ? [PROPOSE_IMAGE_ACTION_TOOL, { type: 'web_search' as const }]
@@ -838,7 +842,7 @@ function isRetryableAgentError(error: unknown): boolean {
 
 function normalizeStreamError(error: unknown): Error {
   if (error instanceof AgentRequestTimeoutError) {
-    return new Error(`${error.message}，已自动重试 ${AGENT_GPT_REQUEST_MAX_ATTEMPTS} 次仍未成功`);
+    return new Error(`${error.message}，请稍后手动重试`);
   }
   if (error instanceof Error) {
     const lower = error.message.toLowerCase();
@@ -849,7 +853,7 @@ function normalizeStreamError(error: unknown): Error {
       || lower.includes('econnreset')
       || lower.includes('terminated')
     ) {
-      return new Error(`网络连接失败，已自动重试 ${AGENT_GPT_REQUEST_MAX_ATTEMPTS} 次仍未成功`);
+      return new Error(`网络连接中断，请稍后重试`);
     }
     return error;
   }

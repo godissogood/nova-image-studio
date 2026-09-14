@@ -57,6 +57,9 @@ const tamperedRegistry: NovaModelRegistry = {
     agent: 'text-1',
     promptOptimize: 'text-1',
     imageDescribe: 'text-1',
+    sliceDecomposition: 'text-1',
+    sliceReconstruct: 'text-1',
+    sliceImageEdit: 'image-1',
   },
 };
 

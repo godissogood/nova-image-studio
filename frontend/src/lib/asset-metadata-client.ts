@@ -66,7 +66,7 @@ export async function generateAssetMetadata(input: GenerateAssetMetadataInput): 
       { type: 'text', text: prompt },
       { type: 'image', imageDataUrl: input.imageDataUrl },
     ],
-    { reasoningEffort: 'high' }
+    { reasoningEffort: 'low' }
   );
 
   const response = await fetch('/api/nova/proxy/text', {

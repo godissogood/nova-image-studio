@@ -48,6 +48,8 @@ export interface AgentImageRecord {
   contentHash?: string;
   /** 生成类图片对应的后端任务 id */
   sourceTaskId?: string;
+  /** 任务结果中的图片序号，用于部分取回成功后的去重与恢复。 */
+  sourceTaskImageIndex?: number;
   /** 图片自然像素宽度（用于按上传图比例预填生图参数） */
   width?: number;
   /** 图片自然像素高度 */

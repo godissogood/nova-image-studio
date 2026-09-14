@@ -22,6 +22,7 @@ export function buildSimpleProxyTextRequestBody(
   if (protocol === 'openai-chat-completions') {
     return {
       model,
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       ...(stream ? { stream: true } : {}),
       messages: [
         ...(systemInstruction ? [{ role: 'system' as const, content: systemInstruction }] : []),

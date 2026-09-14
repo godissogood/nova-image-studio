@@ -726,6 +726,8 @@ export function AgentChatWorkspace({ wideMode = false, disabled = false, onConfi
                 checkNowLabel={onCooldown ? '稍候…' : '主动查询'}
                 onCheckNow={() => void handleCheckNow()}
                 onSkipDescribing={() => agent.skipDescribing()}
+                onRetryRetrieval={() => void agent.retryRetrieval()}
+                onDismissRetrieval={() => void agent.dismissRetrieval()}
               />
             </div>
           </div>

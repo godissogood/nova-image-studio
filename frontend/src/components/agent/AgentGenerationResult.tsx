@@ -24,6 +24,8 @@ interface AgentGenerationProgressProps {
   checkNowLabel?: string;
   onCheckNow?: () => void;
   onSkipDescribing?: () => void;
+  onRetryRetrieval?: () => void;
+  onDismissRetrieval?: () => void;
 }
 
 interface ParsedSection {
@@ -96,6 +98,8 @@ function getProgressLabel(phase: AgentPhase, hasTaskId: boolean): string {
       return '正在取回图片';
     case 'describing':
       return '正在识别图片描述';
+    case 'retrieval-failed':
+      return '任务已保留，等待取回图片';
     default:
       return '正在准备生成';
   }
@@ -186,6 +190,8 @@ export function AgentGenerationProgress({
   checkNowLabel = '主动查询',
   onCheckNow,
   onSkipDescribing,
+  onRetryRetrieval,
+  onDismissRetrieval,
 }: AgentGenerationProgressProps) {
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const progressLabel = getProgressLabel(phase, Boolean(taskId));
@@ -241,12 +247,14 @@ export function AgentGenerationProgress({
 
       <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-2">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+          {phase === 'retrieval-failed'
+            ? <ImageIcon className="h-3.5 w-3.5 text-amber-500" />
+            : <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
           <span className="font-medium text-foreground">{progressLabel}</span>
-          <span className="inline-flex items-center gap-1 tabular-nums">
+          {phase !== 'retrieval-failed' && <span className="inline-flex items-center gap-1 tabular-nums">
             <Clock className="h-3.5 w-3.5" />
             {elapsedSeconds}s
-          </span>
+          </span>}
           {taskId && (
             <span className="min-w-0 max-w-[14rem] truncate rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px] sm:max-w-[18rem]">
               {taskId}
@@ -283,10 +291,30 @@ export function AgentGenerationProgress({
               {checkNowLabel}
             </button>
           )}
+          {phase === 'retrieval-failed' && onRetryRetrieval && (
+            <button
+              type="button"
+              onClick={onRetryRetrieval}
+              className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              <RefreshCw className="h-3 w-3" />
+              重新取回
+            </button>
+          )}
         </div>
+        {phase === 'retrieval-failed' && (
+          <div className="mt-2 space-y-2">
+            <p>只重新查询并下载原任务的图片，不会再次生图或扣除生图额度。请在服务器保留期内取回。</p>
+            {onDismissRetrieval && (
+              <button type="button" onClick={onDismissRetrieval} className="underline underline-offset-2 hover:text-foreground">
+                结束取回，继续对话
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      {phase !== 'retrieval-failed' && <div className="flex flex-wrap gap-2">
         {Array.from({ length: placeholderCount }, (_, index) => (
           <div
             key={index}
@@ -302,7 +330,7 @@ export function AgentGenerationProgress({
             </div>
           </div>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }

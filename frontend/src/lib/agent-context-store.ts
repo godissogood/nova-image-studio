@@ -256,6 +256,9 @@ export interface PendingGenerationData {
   gptImageBackground?: GptImageBackground;
   parallelCount: number;
   startedAt: number;
+  /** 已生成的任务仅重试取回，不重新提交生图请求。 */
+  completed?: boolean;
+  retrievalError?: string;
 }
 
 const PENDING_GENERATION_KEY = 'pendingGeneration';

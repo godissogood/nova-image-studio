@@ -35,7 +35,7 @@ const NOVA_PROXY_IMAGE_EDIT_ENDPOINT = '/api/nova/proxy/image-edit';
  * 所以这里给一个固定值，由 buildNovaAgentRequestBody 按协议自动降级：
  * Responses 走 reasoning.effort、Gemini 折算成 thinkingBudget、其余协议忽略。
  */
-const SLICE_REASONING_EFFORT = 'high';
+const SLICE_REASONING_EFFORT = 'medium';
 
 /** 发起一次图片编辑请求。表单内容由调用方决定（是否带 mask、是否要透明背景）。 */
 async function postImageEdit(
