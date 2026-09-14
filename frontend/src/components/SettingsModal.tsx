@@ -120,6 +120,30 @@ function isCompleteTextModel(model: TextModelConfig): boolean {
   return Boolean(model.name.trim() && model.modelId.trim() && model.apiKey.trim() && model.baseUrl.trim());
 }
 
+const IMAGE_PROVIDER_META: Record<ProviderProtocol, { label: string; className: string }> = {
+  google: { label: 'Google', className: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300' },
+  openai: { label: 'OpenAI', className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' },
+  grok: { label: 'Grok', className: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300' },
+};
+
+function ImageProviderBadge({ protocol }: { protocol: ProviderProtocol }) {
+  const meta = IMAGE_PROVIDER_META[protocol];
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${meta.className}`}>
+      {meta.label}
+    </span>
+  );
+}
+
+function imageModelOptionLabel(model: Pick<ImageModelConfig, 'name' | 'protocol'>) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <ImageProviderBadge protocol={model.protocol} />
+      <span className="truncate">{model.name}</span>
+    </span>
+  );
+}
+
 function getImageModelLabel(models: ImageModelConfig[], id: string): string | undefined {
   return models.find((model) => model.id === id)?.name;
 }
@@ -397,12 +421,16 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const completeImageOptions = imageModels.filter(isCompleteImageModel).map((model) => ({ value: model.id, label: model.name }));
+  const builtinImagePresetOptions = BUILTIN_IMAGE_PRESET_OPTIONS.map((option) => {
+    const preset = BUILTIN_IMAGE_PRESETS[option.value];
+    return { ...option, label: imageModelOptionLabel({ name: option.label, protocol: preset.protocol }) };
+  });
+  const completeImageOptions = imageModels.filter(isCompleteImageModel).map((model) => ({ value: model.id, label: imageModelOptionLabel(model) }));
   const completeTextOptions = textModels.filter(isCompleteTextModel).map((model) => ({ value: model.id, label: model.name }));
   // 切图的图片编辑只能落在 openai 协议模型上（带 mask 的 /v1/images/edits）
   const sliceCapableImageOptions = imageModels
     .filter((model) => isCompleteImageModel(model) && isSliceCapableImageModel(model))
-    .map((model) => ({ value: model.id, label: model.name }));
+    .map((model) => ({ value: model.id, label: imageModelOptionLabel(model) }));
   const selectedImageOutputSizes = selectedImageModel
     ? getImageModelOutputSizes({
         ...selectedImageModel,
@@ -480,7 +508,10 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                       onClick={() => setSelectedImageModelId(model.id)}
                       className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${selectedImageModelId === model.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
                     >
-                      <div className="font-medium">{model.name || '未命名模型'}</div>
+                      <div className="flex items-center gap-2 font-medium">
+                        <ImageProviderBadge protocol={model.protocol} />
+                        <span className="truncate">{model.name || '未命名模型'}</span>
+                      </div>
                       <div className="text-xs text-muted-foreground">{isCompleteImageModel(model) ? '配置完成' : '待补全'}</div>
                     </button>
                   ))}
@@ -493,7 +524,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                       <Select
                         value={selectedImageModel.builtinPreset}
                         onValueChange={(value) => handleUpdateImageModel(selectedImageModel.id, { builtinPreset: value as ImageModelConfig['builtinPreset'] })}
-                        options={BUILTIN_IMAGE_PRESET_OPTIONS}
+                        options={builtinImagePresetOptions}
                       />
                     </div>
                     <div className="space-y-2">

@@ -39,6 +39,7 @@ import {
   type GptImageStyle,
   type ParallelCount,
 } from '@/lib/model-capabilities';
+import { isGptImageModel } from '@/lib/gemini-config';
 import type { AgentImageRecord, AgentProposal } from '@/lib/agent-chat-config';
 
 export interface AgentApproveParams {
@@ -165,7 +166,7 @@ export function AgentProposalCard({
   const supportsAdvancedParams = supportsGptImageAdvancedParams(imageModel);
   const autoLayoutAvailable = supportsAutoLayout(imageModel);
   const autoLayoutLocked = autoLayoutAvailable && layout.outputSize === 'auto';
-  const showSizeControl = imageModel !== 'gpt-image-2' && (sizeOptions.length > 1 || autoLayoutAvailable);
+  const showSizeControl = !isGptImageModel(imageModel) && (sizeOptions.length > 1 || autoLayoutAvailable);
   const showAspectControl = !autoLayoutLocked && aspectRatioOptions.length > 0;
   const customSizeAvailable = supportsCustomSize(imageModel) && !autoLayoutLocked;
   const customSizeMaxSide = getCustomSizeMaxSide(imageModel) || 2048;
