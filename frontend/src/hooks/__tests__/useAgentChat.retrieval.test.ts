@@ -7,6 +7,7 @@ import { useAgentChat } from '@/hooks/useAgentChat';
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(), get: vi.fn(), download: vi.fn(),
+  hasApiKey: true,
   state: {
     pending: null as PendingGenerationData | null,
     proposal: null as PendingProposalData | null,
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/lib/settings-storage', () => ({ hasAnyApiKey: () => true }));
+vi.mock('@/lib/settings-storage', () => ({ hasAnyApiKey: () => mocks.hasApiKey }));
 vi.mock('@/lib/ccode-task-client', () => ({
   createNovaTask: mocks.create,
   getNovaTask: mocks.get,
@@ -58,6 +59,7 @@ const blob = () => new Blob(['test-image'], { type: 'image/png' });
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  mocks.hasApiKey = true;
   mocks.state.pending = null;
   mocks.state.proposal = { proposal, pendingAnalysis: '分析', pendingReasoning: '', isReedit: false };
   mocks.state.images = [];
@@ -66,6 +68,20 @@ beforeEach(() => {
   mocks.create.mockResolvedValue('task-original');
   mocks.get.mockResolvedValue({ id: 'task-original', status: 'completed', result: { images: ['URL:/api/nova/images/task-original/0'] } });
   mocks.download.mockResolvedValue(blob());
+});
+
+describe('Agent API key status', () => {
+  it('updates when model settings are saved after the Agent mounts', () => {
+    mocks.hasApiKey = false;
+    const hook = renderHook(() => useAgentChat());
+    expect(hook.result.current.hasApiKey).toBe(false);
+
+    mocks.hasApiKey = true;
+    act(() => window.dispatchEvent(new Event('nova-model-registry-updated')));
+
+    expect(hook.result.current.hasApiKey).toBe(true);
+    hook.unmount();
+  });
 });
 
 async function startGeneration() {
