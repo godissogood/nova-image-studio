@@ -1,22 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { hasAnyApiKey } from '@/lib/settings-storage';
 
-export function useApiKeyStatus() {
-  const [hasApiKey, setHasApiKey] = useState(() => hasAnyApiKey());
-
-  useEffect(() => {
-    const syncApiKeyState = () => setHasApiKey(hasAnyApiKey());
+function subscribe(onChange: () => void) {
     const handleStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === 'nova-model-registry') syncApiKeyState();
+      if (!event.key || event.key === 'nova-model-registry') onChange();
     };
 
-    window.addEventListener('nova-model-registry-updated', syncApiKeyState);
+    window.addEventListener('nova-model-registry-updated', onChange);
     window.addEventListener('storage', handleStorage);
     return () => {
-      window.removeEventListener('nova-model-registry-updated', syncApiKeyState);
+      window.removeEventListener('nova-model-registry-updated', onChange);
       window.removeEventListener('storage', handleStorage);
     };
-  }, []);
+}
 
-  return [hasApiKey, setHasApiKey] as const;
+const getServerSnapshot = () => false;
+const notifyApiKeyChange = () => window.dispatchEvent(new Event('nova-model-registry-updated'));
+
+export function useApiKeyStatus() {
+  const hasApiKey = useSyncExternalStore(subscribe, hasAnyApiKey, getServerSnapshot);
+
+  return [hasApiKey, notifyApiKeyChange] as const;
 }

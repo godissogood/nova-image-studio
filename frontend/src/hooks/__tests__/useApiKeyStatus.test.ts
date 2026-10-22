@@ -1,6 +1,9 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useApiKeyStatus } from '@/hooks/useApiKeyStatus';
+import { createElement } from 'react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 
 const completeRegistry = {
   imageModels: [{
@@ -35,6 +38,27 @@ const completeRegistry = {
 
 describe('useApiKeyStatus', () => {
   beforeEach(() => localStorage.clear());
+
+  it('hydrates saved configuration from the same empty server snapshot without rebuilding the page', async () => {
+    localStorage.setItem('nova-model-registry', JSON.stringify(completeRegistry));
+    function Status() {
+      const [configured] = useApiKeyStatus();
+      return createElement('span', null, configured ? 'configured' : 'empty');
+    }
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(createElement(Status));
+    expect(container.textContent).toBe('empty');
+    document.body.append(container);
+    const errors: unknown[] = [];
+    let root: ReturnType<typeof hydrateRoot>;
+    await act(async () => {
+      root = hydrateRoot(container, createElement(Status), { onRecoverableError: error => errors.push(error) });
+    });
+    expect(container.textContent).toBe('configured');
+    expect(errors).toEqual([]);
+    act(() => root.unmount());
+    container.remove();
+  });
 
   it('updates immediately when settings are saved in the same tab', () => {
     const { result } = renderHook(() => useApiKeyStatus());
