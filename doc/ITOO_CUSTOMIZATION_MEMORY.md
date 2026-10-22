@@ -14,7 +14,18 @@
 
 Git 约定：`origin` 指向 itoo fork，`upstream` 指向官方仓库。生产服务器只跟踪 `origin/main`。
 
-## 本地升级候选（2026-10-22 23:03，未推送上线）
+## 当前发布快照（2026-10-22 23:23，Nova 3.4.0 已上线）
+
+- 用户明确授权推送上线，`main`已快进并推送业务合并提交 `d27f6cbe21ef8435d74679c6a6fd2af16e314fd6`；服务器从该提交构建，运行版本3.4.0。北京时间23:22:54–23:23:02仅切换Nova，镜像 `godissogood/nova-image-studio:upgrade-d27f6cb-20261022`，image `sha256:ec6a8cf65e5197de235a6349930c09a8c5630cc72e1d04cc9575a0198ed4cf78`，OCI revision为业务提交，Node22.23.4。后续文档提交不改变运行镜像revision。
+- 本地升级前端699/699、最终零警告lint/TypeScript/生产构建；本次精确提交镜像后端124/124、插件、SQLite和无外网隔离启动通过。正式healthy/0重启，Nova首页/config/queue、Sub2API health200、SQLite quick_check=ok；CDP关闭且接口404。
+- iToo模板/主题、原模型模板与默认配置/独立Key、固定地址/内部转发、Grok视频/图片托管和原任务重取定制保留。供应商管理、Agent多会话等新功能上线；Electron未打包发布。
+- 公网Edge13条最终回归通过：全部9个Next.js脚本指纹与镜像一致；旧配置迁移/原2.5模板/独立Key、保存后刷新3次无#418、供应商读取失败重试/增删确认与丢弃、Agent增改切换/活动会话刷新、原工作台及Grok/H3隐藏、手机390设置/抽屉/关于和1440×600低高度纵向导航、无Key禁用。pageerror0、非预期console error0；模型列表模拟502有1条预期console error。未发真实模型或付费请求，未改生产模式/密码，配置只在独立浏览器内保存。
+- 其它8容器ID/镜像/启动/重启/状态、Caddy PID3451512前后未变；固定内部转发、挂载、回环端口、共享网络保持。备份 `/root/nova-backups/pre-upgrade-340-20261022/`仅服务器保存，目录700/归档600；旧lint安全镜像保留，回滚 `sudo python3 /opt/nova-upgrade-release-20261022/rollback.py`未触发或演练，不覆盖上线后新数据。
+- 本机23:16杀软命中的 `release.cpython-313.pyc` 为本地发布源码导入缓存，源码/哈希/签名核对未发现下载木马执行逻辑，更符合启发式误报；未确认厂商规则，也未关闭防护或加白。核查和发布报告 `G:/Codex_x/中转站/output/nova-upgrade-release-2026-10-22/`。
+
+## 本地升级候选（2026-10-22 23:03历史阶段，后已推送上线）
+
+以下未推送上线仅指候选阶段，已由上方23:23正式发布覆盖。
 
 - 按用户授权从本站 `6edaf34` 开始，先提交 React #418 修复 `9910f03`，再在 `sync/upstream-20261022` 完整合并官方3.4.0固定 `b8cd44cc083a0429f8df6a7c9fc5b935b7ae0731`，包含此前11个上游提交。17个冲突按本站定制适配，不能再把该分支描述为尚未升级。最终提交见工作区报告/Git证据。
 - 新增供应商管理/模型读取与用途、Agent多会话/后台任务、备份及协议/插件增强。保留原模型编辑器和模板、配置ID/备注/默认模型、`gpt-image-2.5`/Grok2.0与模型独立Key；供应商与模型编辑双向桥接，单模型修改Key不覆盖其它模型，同modelId不同配置不合并丢失，视频/音频/未启用条目保留。
@@ -27,7 +38,7 @@ Git 约定：`origin` 指向 itoo fork，`upstream` 指向官方仓库。生产�
 - 候选image `sha256:c888ed1bde6183cf8cd2f203d8ad1e71cb82972287df4583807151a2e7338ecc`。本轮未推送、未发布；正式容器仍为下方21:05的lint版本、healthy，所有生产容器前后未变。豆包/百炼等属于协议/mock测试通过，不宣称生产全模型兼容。
 - 报告 `G:/Codex_x/中转站/output/nova-upgrade-2026-10-22/升级验收报告.md`；最终浏览器结果和原始探索证据同目录。下方#418待修等结论保留为历史生产快照，不代表本地候选仍有该问题。
 
-## 当前发布快照（2026-10-22 21:05）
+## 历史发布快照（2026-10-22 21:05）
 
 - 已按用户要求提交、推送并上线：Node安全补丁 `2be5b95`，前端源码 `fcfe8bcc86203cfbbc0968aa114b7b8c70f36e7f`；镜像 `godissogood/nova-image-studio:lint-fcfe8bc-20261022`，image ID `sha256:eb914164af67bad3cc96798d9ae648b9e46e855fecd164022d571f0fdefbd958`，OCI revision为上述前端提交。后续仅文档提交不改变运行镜像源码revision。
 - 北京时间21:05:47–21:05:56仅替换Nova；Node仍为安全版 `v22.23.4`，Compose持久镜像标签一致。Nova healthy/0重启，首页/config/queue与Sub2API health200，SQLite `quick_check=ok`；其它8容器和主Caddy PID未变，固定上游、挂载、回环端口和共享网络保持。
