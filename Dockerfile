@@ -1,4 +1,6 @@
-FROM node:22-slim AS frontend-builder
+ARG NODE_IMAGE=node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
+
+FROM ${NODE_IMAGE} AS frontend-builder
 
 WORKDIR /app
 
@@ -8,7 +10,7 @@ COPY frontend/ ./frontend/
 
 RUN cd frontend && npm ci && npm run build
 
-FROM node:22-slim AS backend-deps
+FROM ${NODE_IMAGE} AS backend-deps
 
 WORKDIR /app/backend
 
@@ -23,7 +25,7 @@ RUN npm ci --omit=dev \
   && apt-get purge -y --auto-remove python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-FROM node:22-slim AS production
+FROM ${NODE_IMAGE} AS production
 
 WORKDIR /app
 
