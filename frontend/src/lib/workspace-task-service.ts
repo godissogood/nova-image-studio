@@ -10,6 +10,8 @@ import type { AspectRatio, OutputSize, StoredJob } from '@/lib/job-store';
 import {
   getGptImageAdvancedParamsForModel,
   normalizeModel,
+  resolveSubmitLayout,
+
   type GptImageBackground,
   type GptImageQuality,
   type GptImageStyle,
@@ -337,12 +339,13 @@ export async function submitTextToImage(
   });
 
   for (const prompt of input.prompts) {
+    const layout = resolveSubmitLayout(input.model as ModelId, input.outputSize, input.aspectRatio, prompt);
     const job = createBaseJob(
       'text-to-image',
       prompt,
-      input.outputSize,
+      layout.outputSize,
       input.customSize,
-      input.aspectRatio,
+      layout.aspectRatio,
       input.temperature,
       model,
       advancedParams.quality,
@@ -359,9 +362,9 @@ export async function submitTextToImage(
         protocol: provider.protocol,
         mode: 'text-to-image',
         prompt,
-        outputSize: input.outputSize,
+        outputSize: layout.outputSize,
         customSize: input.customSize,
-        aspectRatio: input.aspectRatio,
+        aspectRatio: layout.aspectRatio,
         temperature: input.temperature,
         model: provider.modelId,
         gptImageQuality: advancedParams.quality,
@@ -413,12 +416,13 @@ export async function submitImageToImage(
     mimeType: file.mimeType,
   }));
   const imageReferences = buildImageReferences(input.files);
+  const layout = resolveSubmitLayout(input.model as ModelId, input.outputSize, input.aspectRatio, input.prompt);
   const job = createBaseJob(
     'image-to-image',
     input.prompt,
-    input.outputSize,
+    layout.outputSize,
     input.customSize,
-    input.aspectRatio,
+    layout.aspectRatio,
     input.temperature,
     model,
     advancedParams.quality,
@@ -437,9 +441,9 @@ export async function submitImageToImage(
       protocol: provider.protocol,
       mode: 'image-to-image',
       prompt: input.prompt,
-      outputSize: input.outputSize,
+      outputSize: layout.outputSize,
       customSize: input.customSize,
-      aspectRatio: input.aspectRatio,
+      aspectRatio: layout.aspectRatio,
       temperature: input.temperature,
       model: provider.modelId,
       gptImageQuality: advancedParams.quality,

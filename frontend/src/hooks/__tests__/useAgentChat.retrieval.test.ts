@@ -31,9 +31,15 @@ vi.mock('@/lib/model-endpoints', () => ({
 vi.mock('@/lib/agent-context-store', () => ({
   loadAgentSession: async () => ({ images: [...mocks.state.images], messages: [...mocks.state.messages], imageModel: null }),
   loadPendingProposal: async () => mocks.state.proposal,
-  loadPendingGeneration: async () => mocks.state.pending,
-  savePendingGeneration: async (data: PendingGenerationData) => { mocks.state.pending = data; },
-  clearPendingGeneration: async () => { mocks.state.pending = null; },
+  loadPendingGenerationTasks: async () => mocks.state.pending ? [mocks.state.pending] : [],
+  savePendingGenerationTask: async (data: PendingGenerationData) => { mocks.state.pending = data; },
+  removePendingGenerationTask: async () => { mocks.state.pending = null; },
+  clearPendingGenerationTasks: async () => { mocks.state.pending = null; },
+  getAgentSessionGeneration: () => 0,
+  invalidateAgentSession: vi.fn(),
+  isAgentSessionGenerationCurrent: () => true,
+  sweepAgentOrphanBlobsOnce: async () => 0,
+  deleteAgentImageIfUnreferenced: vi.fn(),
   savePendingProposal: async (data: PendingProposalData) => { mocks.state.proposal = data; },
   clearPendingProposal: async () => { mocks.state.proposal = null; },
   putImageRecord: async (record: AgentImageRecord) => {

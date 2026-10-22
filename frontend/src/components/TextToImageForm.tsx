@@ -21,18 +21,18 @@ import { requireDefaultConfiguredTextModel } from '@/lib/model-endpoints';
 import { type ModelId } from '@/lib/gemini-config';
 import { useModelRegistryRevision } from '@/hooks/useModelRegistryRevision';
 import {
-  getAspectRatioOptions,
   getCustomSizeMaxSide,
-  getValidOutputSizes,
   DEFAULT_GPT_IMAGE_ADVANCED_PARAMS,
   getGptImageAdvancedParamsForModel,
   normalizeCustomImageSize,
   normalizeModel,
+  sanitizeLayoutForModel,
   supportsCustomSize,
   type GptImageAdvancedParams,
   type GptImageBackground,
   type GptImageQuality,
   type GptImageStyle,
+  PARALLEL_COUNT_VALUES,
   type ParallelCount,
 } from '@/lib/model-capabilities';
 import type { OutputSize, AspectRatio } from '@/lib/job-store';
@@ -168,17 +168,19 @@ export function TextToImageForm({ onSubmit, disabled = false, onDraftConsumed, o
     const saved = loadJsonFromStorage<T2ISettings>(T2I_SETTINGS_KEY);
 
     const nextModel = normalizeModel(useInitial && initialData?.model ? initialData.model : saved.model, 'textToImage');
-    const validSizes = getValidOutputSizes(nextModel);
-    const nextOutputSize: OutputSize = useInitial && initialData?.outputSize && validSizes.includes(initialData.outputSize)
+    const candidateOutputSize: OutputSize = useInitial && initialData?.outputSize
+
       ? initialData.outputSize
-      : (saved.outputSize && validSizes.includes(saved.outputSize) ? saved.outputSize : validSizes[0]);
+      : (saved.outputSize || '1K');
+    const candidateAspectRatio: AspectRatio = useInitial && initialData?.aspectRatio
+      ? initialData.aspectRatio
+      : (saved.aspectRatio || '1:1');
+    const sanitized = sanitizeLayoutForModel(nextModel, candidateOutputSize, candidateAspectRatio);
+    const nextOutputSize = sanitized.outputSize;
+    const nextAspectRatio = sanitized.aspectRatio;
     const nextCustomSize = supportsCustomSize(nextModel) && nextOutputSize !== 'auto'
       ? normalizeCustomImageSize(useInitial ? initialData?.customSize : saved.customSize, getCustomSizeMaxSide(nextModel))
       : undefined;
-    const validRatios = getAspectRatioOptions(nextModel, nextOutputSize).map(a => a.value);
-    const nextAspectRatio: AspectRatio = useInitial && initialData?.aspectRatio && validRatios.includes(initialData.aspectRatio)
-      ? initialData.aspectRatio
-      : (saved.aspectRatio && validRatios.includes(saved.aspectRatio) ? saved.aspectRatio : (validRatios[0] || '1:1'));
     const nextTemperature = useInitial && typeof initialData?.temperature === 'number' && initialData.temperature >= 0 && initialData.temperature <= 2
       ? initialData.temperature
       : (typeof saved.temperature === 'number' && saved.temperature >= 0 && saved.temperature <= 2 ? saved.temperature : 1);
@@ -187,9 +189,9 @@ export function TextToImageForm({ onSubmit, disabled = false, onDraftConsumed, o
       style: useInitial ? initialData?.gptImageStyle : saved.gptImageStyle,
       background: useInitial ? initialData?.gptImageBackground : saved.gptImageBackground,
     });
-    const nextParallelCount: ParallelCount = useInitial && initialData?.parallelCount && [1, 2, 3, 4].includes(initialData.parallelCount)
+    const nextParallelCount: ParallelCount = useInitial && initialData?.parallelCount && PARALLEL_COUNT_VALUES.includes(initialData.parallelCount)
       ? initialData.parallelCount
-      : (saved.parallelCount && [1, 2, 3, 4].includes(saved.parallelCount) ? saved.parallelCount : 1);
+      : (saved.parallelCount && PARALLEL_COUNT_VALUES.includes(saved.parallelCount) ? saved.parallelCount : 1);
 
     queueMicrotask(() => {
       setModel(nextModel);

@@ -60,7 +60,7 @@ test('Grok download retry keeps a completed task, survives restart, and never re
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     generatedRequests.push({ path: req.url, body });
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ data: [body.image
+    res.end(JSON.stringify({ data: [body.images?.length
       ? { b64_json: JPEG.toString('base64') }
       : { url: 'http://127.0.0.1:8000/v1/media/images/img_test' }] }));
   });

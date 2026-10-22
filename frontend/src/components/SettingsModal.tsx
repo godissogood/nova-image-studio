@@ -26,6 +26,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ProviderSettingsPanel } from '@/components/ProviderSettingsPanel';
+import { reconcileModelProviders, type ProviderConfig } from '@/lib/provider-registry';
 import { PluginsSettings } from '@/components/settings/PluginsSettings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,6 +46,7 @@ import {
   isSliceCapableImageModel,
   loadRegistry,
   saveRegistry,
+  deriveImageAndTextModels,
   type DefaultModels,
   type ImageModelConfig,
   type ProviderProtocol,
@@ -62,7 +65,7 @@ import { checkModelsAvailability, type ModelStatus } from '@/lib/ccode-task-clie
 import { hasAnyApiKey } from '@/lib/settings-storage';
 
 /** 设置弹层的页签。调用方可以指定打开时落在哪一页。 */
-export type SettingsTab = 'models' | 'plugins' | 'backup' | 'about';
+export type SettingsTab = 'models' | 'providers' | 'plugins' | 'backup' | 'about';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -122,6 +125,8 @@ const IMAGE_PROVIDER_META: Record<ProviderProtocol, { label: string; className: 
   google: { label: 'Google', className: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300' },
   openai: { label: 'OpenAI', className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' },
   grok: { label: 'Grok', className: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300' },
+  doubao: { label: '豆包', className: 'border-sky-200 text-sky-700 dark:text-sky-300' },
+  'alibaba-dashscope': { label: '阿里百炼', className: 'border-orange-200 text-orange-700 dark:text-orange-300' },
 };
 
 const TEXT_PROVIDER_META: Record<BuiltinTextPreset['provider'], { label: string; className: string }> = {
@@ -198,6 +203,10 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   const [initialRegistry] = useState(() => loadRegistry());
   const [imageModels, setImageModels] = useState<ImageModelConfig[]>(() => initialRegistry.imageModels.map(cloneImageModel));
   const [textModels, setTextModels] = useState<TextModelConfig[]>(() => initialRegistry.textModels.map(cloneTextModel));
+  const [providers, setProviders] = useState<ProviderConfig[]>(() => initialRegistry.providers || []);
+  const [selectedProviderId, setSelectedProviderId] = useState('');
+  const [savedDraft, setSavedDraft] = useState('');
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [defaultsDraft, setDefaults] = useState<DefaultModels>(() => normalizeDefaults(
     initialRegistry.defaults,
     initialRegistry.imageModels,
@@ -226,6 +235,10 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
       setTab(initialTab);
       setImageModels(registry.imageModels.map(cloneImageModel));
       setTextModels(registry.textModels.map(cloneTextModel));
+      setProviders(registry.providers || []);
+      setSelectedProviderId(registry.providers?.[0]?.id || '');
+      setSavedDraft(JSON.stringify({ imageModels: registry.imageModels, textModels: registry.textModels, providers: registry.providers || [], defaults: normalizeDefaults(registry.defaults, registry.imageModels, registry.textModels) }));
+      setConfirmDiscard(false);
       setDefaults(normalizeDefaults(registry.defaults, registry.imageModels, registry.textModels));
       setSelectedImageModelId(registry.imageModels[0]?.id || '');
       setSelectedTextModelId(registry.textModels[0]?.id || '');
@@ -239,6 +252,24 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   }
 
   const defaults = normalizeDefaults(defaultsDraft, imageModels, textModels);
+
+  const draftSnapshot = JSON.stringify({ imageModels, textModels, providers, defaults });
+  const mergedProviders = useMemo(() => reconcileModelProviders(providers, imageModels, textModels), [providers, imageModels, textModels]);
+  const handleProviderChange = (update: ProviderConfig[] | ((prev: ProviderConfig[]) => ProviderConfig[])) => {
+    const next = typeof update === 'function' ? update(mergedProviders) : update;
+    const derived = deriveImageAndTextModels(next);
+    setProviders(next);
+    setImageModels(derived.imageModels);
+    setTextModels(derived.textModels);
+  };
+  const saveDraft = () => {
+    saveRegistry({ providers: mergedProviders, imageModels, textModels, defaults });
+    setSavedDraft(draftSnapshot);
+    syncDynamicModelExports();
+    onApiKeyChange?.(hasAnyApiKey());
+    setSuccess('配置已保存');
+    setError(null);
+  };
 
   const selectedImageModel = useMemo(
     () => imageModels.find((model) => model.id === selectedImageModelId) || null,
@@ -341,14 +372,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
       setSuccess(null);
       return;
     }
-    saveRegistry({
-      imageModels,
-      textModels,
-      defaults,
-    });
-    syncDynamicModelExports();
-    window.dispatchEvent(new Event('nova-model-registry-updated'));
-    onApiKeyChange?.(hasAnyApiKey());
+    saveDraft();
     setSuccess(`${model.name || '当前模型'} 已保存`);
     setError(null);
     setModelStatuses(null);
@@ -378,13 +402,13 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = async (configOnly = false) => {
     setIsBackupActive(true);
     setBackupError(null);
     setBackupSuccess(null);
     try {
-      const blob = await exportAllData((progress) => setBackupProgress(progress));
-      const filename = generateBackupFilename();
+      const blob = await exportAllData((progress) => setBackupProgress(progress), { includeImages: !configOnly });
+      const filename = generateBackupFilename(configOnly);
       downloadBlob(blob, filename);
       setBackupSuccess(`数据已成功导出为 ${filename}`);
     } catch (err) {
@@ -448,7 +472,10 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   return (
     <Dialog open={isOpen} onOpenChange={(open) => {
       if (!open && isBackupActive) return;
-      if (!open) onClose();
+      if (!open) {
+        if (savedDraft !== draftSnapshot) setConfirmDiscard(true);
+        else onClose();
+      }
     }}>
       <DialogContent className="flex max-h-[92vh] flex-col overflow-hidden p-0 pt-0 gap-0 sm:max-w-5xl">
         <DialogHeader className="p-4 pb-3">
@@ -459,11 +486,14 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
           <DialogDescription>按模型分别配置协议、URL 和 API Key。至少完成一个图片模型和一个文本模型后，外部功能才会解锁。</DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={value => setTab(value as SettingsTab)} className="min-h-0 flex-1 gap-0">
-          <TabsList className="w-full rounded-none border-b bg-transparent h-auto p-0">
+        <Tabs value={tab} onValueChange={value => setTab(value as SettingsTab)} className="min-h-0 min-w-0 flex-1 gap-0">
+          <TabsList className="min-h-11 w-full shrink-0 justify-start overflow-x-auto rounded-none border-b bg-transparent h-auto p-0 [&>[data-slot=tabs-trigger]]:flex-none sm:[&>[data-slot=tabs-trigger]]:flex-1">
             <TabsTrigger value="models" className="gap-2 rounded-none border-b-2 border-transparent data-active:border-primary data-active:bg-transparent data-active:shadow-none px-4 py-3">
               <ImageIcon className="w-4 h-4" />
               模型配置
+            </TabsTrigger>
+            <TabsTrigger value="providers" className="gap-2 rounded-none border-b-2 border-transparent data-active:border-primary data-active:bg-transparent px-4 py-3">
+              <Database className="w-4 h-4" />供应商
             </TabsTrigger>
             <TabsTrigger value="plugins" className="gap-2 rounded-none border-b-2 border-transparent data-active:border-primary data-active:bg-transparent data-active:shadow-none px-4 py-3">
               <Package className="w-4 h-4" />
@@ -811,6 +841,9 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
             </div>
           </TabsContent>
 
+          <TabsContent value="providers" className="min-h-0 overflow-y-auto p-4 sm:p-6 mt-0">
+            <ProviderSettingsPanel providers={mergedProviders} selectedProviderId={selectedProviderId} onSelect={setSelectedProviderId} onChange={handleProviderChange} />
+          </TabsContent>
           <TabsContent value="plugins" className="min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6 mt-0">
             <PluginsSettings />
           </TabsContent>
@@ -844,10 +877,11 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                   <div className="flex-1 space-y-2">
                     <h4 className="font-medium">导出数据</h4>
                     <p className="text-sm text-muted-foreground">将所有数据打包为 ZIP 文件下载到本地。备份文件包含模型配置和本地记录，请自行保管。</p>
-                    <Button onClick={handleExport} disabled={isBackupActive} className="gap-2">
+                    <Button onClick={() => handleExport(false)} disabled={isBackupActive} className="gap-2">
                       <Download className="w-4 h-4" />
                       全量备份
                     </Button>
+                    <Button variant="outline" onClick={() => handleExport(true)} disabled={isBackupActive} className="ml-2 gap-2">仅配置备份</Button>
                   </div>
                 </div>
               </div>
@@ -900,6 +934,15 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
             </div>
           </TabsContent>
         </Tabs>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t p-3">
+          <p className="min-w-0 flex-1 break-words text-xs text-muted-foreground">{error || success || (savedDraft !== draftSnapshot ? '有未保存的配置' : '配置已保存')}</p>
+          <Button onClick={saveDraft} disabled={isBackupActive} className="shrink-0 gap-2"><Save className="w-4 h-4" />保存配置</Button>
+        </div>
+        <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+          <DialogContent><DialogHeader><DialogTitle>丢弃未保存的配置？</DialogTitle><DialogDescription>关闭后将保留上次保存的配置。</DialogDescription></DialogHeader>
+            <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setConfirmDiscard(false)}>继续编辑</Button><Button variant="destructive" onClick={() => { setConfirmDiscard(false); onClose(); }}>丢弃更改</Button></div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );
