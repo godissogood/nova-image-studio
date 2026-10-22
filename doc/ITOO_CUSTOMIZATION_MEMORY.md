@@ -14,7 +14,18 @@
 
 Git 约定：`origin` 指向 itoo fork，`upstream` 指向官方仓库。生产服务器只跟踪 `origin/main`。
 
-## 当前发布快照（2026-10-22 核验）
+## 当前发布快照（2026-10-22 21:05）
+
+- 已按用户要求提交、推送并上线：Node安全补丁 `2be5b95`，前端源码 `fcfe8bcc86203cfbbc0968aa114b7b8c70f36e7f`；镜像 `godissogood/nova-image-studio:lint-fcfe8bc-20261022`，image ID `sha256:eb914164af67bad3cc96798d9ae648b9e46e855fecd164022d571f0fdefbd958`，OCI revision为上述前端提交。后续仅文档提交不改变运行镜像源码revision。
+- 北京时间21:05:47–21:05:56仅替换Nova；Node仍为安全版 `v22.23.4`，Compose持久镜像标签一致。Nova healthy/0重启，首页/config/queue与Sub2API health200，SQLite `quick_check=ok`；其它8容器和主Caddy PID未变，固定上游、挂载、回环端口和共享网络保持。
+- 前端ESLint零错误/零警告、39文件443项、TypeScript和生产构建通过。候选镜像后端48项、插件9 fixtures、SQLite和无网络隔离启动通过；本地和公网各11组Edge交互均通过，详情见下方回归记录。公网所有 `_next`脚本指纹与运行镜像一致。
+- 独立浏览器使用虚构Key和测试素材；提示词库模式/密码验证及画布AI响应仅浏览器模拟，没有真实上游或付费生成，未改生产开关/密码。保存配置刷新时存在React hydration #418，旧线上与本地在上线前已复现，尚未修复，不能称控制台零错误。
+- 旧Node22.23.4安全镜像保留；备份 `/root/nova-backups/pre-lint-20261022/`，回滚 `sudo python3 /opt/nova-lint-release-20261022/rollback.py`，未触发/演练；不以旧Node漏洞镜像作为本轮回滚目标，不覆盖上线后数据。
+- 报告 `G:/Codex_x/中转站/output/nova-lint-release-2026-10-22/发布验收报告.md`。生产原Dockerfile补丁已保留于服务器Git stash，本地、GitHub和生产仓库已同步业务提交，后续文档提交单独同步，无需再重建。
+
+## 历史发布快照（2026-10-22 18:56）
+
+以下未提交/未部署等描述仅指当时阶段，已由上方21:05发布覆盖。
 
 - 北京时间18:56，仅替换Nova，Node `v22.23.2` → `v22.23.4`，处理 `CVE-2026-111497`；19:05复查 `healthy`、重启计数0，源站首页/config/queue均200，SQLite `quick_check=ok`。
 - 生产镜像 `godissogood/nova-image-studio:node-22.23.4-20261022`，image ID `sha256:9e41e8e3ab1dc568e2164b0f6e27073288cffcebbd19251ee2ae05556da381c0`；生产 `.env` 持久镜像标签与Compose解析一致。
@@ -25,11 +36,11 @@ Git 约定：`origin` 指向 itoo fork，`upstream` 指向官方仓库。生产�
 - 原有本定制文档未提交内容保留。私有配置与停服后数据备份在 `/root/nova-backups/pre-node-CVE-2026-111497-20261022/`，回滚脚本 `/opt/nova-node-fix-20261022/rollback.py`；旧镜像保留，自动回滚未触发，未演练回滚。
 - 详细报告 `G:/Codex_x/中转站/output/nova-node-fix-2026-10-22/修复验收报告.md`。服务器urllib访问Cloudflare公网域名返回403，浏览器公网验证正常；报告分别记录此探测限制。
 
-## 2026-10-22 前端 lint 修复（本地，未部署）
+## 2026-10-22 前端 lint 修复（本地实施阶段，后已上线）
 
 - 按用户要求修复原先9个文件中的8个ESLint错误和15个警告；涉及草稿导入、设置模型草稿、标注图片加载/重绘、提示词库模式同步、视频历史预览空值保护、缺失的回调依赖、静态导入，以及未使用代码清理。
 - 最终验收：`npm run lint -- --max-warnings 0`零错误/零警告；`npm run test:run`为39个文件443项通过；`npx tsc --noEmit`与`npm run build`通过。测试输出中两条CanvasEditor用例有模拟相对URL解析stderr，但均通过。
-- 未做针对交互的浏览器手工回归；未部署、commit或push。生产服务仍运行Node `v22.23.4`安全镜像及原业务源码。详细验收报告 `G:/Codex_x/中转站/output/nova-lint-fix-2026-10-22/修复验收报告.md`。
+- 本地实施阶段未做针对交互的浏览器手工回归，也未部署、commit或push；这些工作已在21:05发布阶段完成，结果见当前快照。实施阶段报告 `G:/Codex_x/中转站/output/nova-lint-fix-2026-10-22/修复验收报告.md`保留当时证据。
 
 ## 历史发布快照（2026-09-18 核验）
 
@@ -241,17 +252,17 @@ backup/itoo-before-upstream-20260905  (本地定制基线 644864e)
 8. `itoo-internal` 只连接 Nova 与 Sub2API，不得把 PostgreSQL 或 Redis 加入该共享网络或暴露到公网。
 9. 更新 Cloudflare 官方 IP 段时必须先保留 SSH 规则，并在新 SSH 会话和两个公网域名都验证成功后结束维护。
 
-## 2026-10-22 lint 修复发布前浏览器回归
+## 2026-10-22 lint 修复本地与公网浏览器回归
 
 - 用户已明确授权提交、推送、上线与针对性交互浏览器回归。
-- 本地生产构建通过9组真实Edge交互检查：设置保存重开与未保存草稿丢弃、固定Base URL只读；画笔/方框、撤销清空与取消关闭；标注合成转为参考草稿、模式切换不重复；错误图片恢复、无可编辑模型提示；视频空历史、缺URL记录、单屏/分屏与下载禁用恢复；提示词广场常驻/关闭/私密与密码错误重试；390×844手机设置及工作台，无横向溢出。
-- 使用独立浏览器和虚构Key、图片及本地生成视频；提示词广场模式/密码验证由浏览器拦截模拟，未改生产配置，未发付费生成。证据 `G:/Codex_x/中转站/output/nova-lint-release-2026-10-22/browser/`，回归清单在同级目录。
-- 带已保存配置重复刷新时出现React #418；本地与上线前旧生产构建均复现，保留 `reload-comparison.json`，不能宣称控制台完全无错。本次交互未因此失败。上线结果另行补记，不把候选验证当成已经发布。
+- 本地和公网分别通过11组真实Edge交互检查：设置保存重开与未保存草稿丢弃、默认模型与固定Base URL只读；画笔/方框、撤销清空与取消关闭；标注合成转为参考草稿、模式切换不重复；错误图片恢复、无可编辑模型提示；视频空历史、缺URL记录、单屏/分屏与下载禁用恢复；提示词广场常驻/关闭/私密与密码错误重试；390×844手机设置及工作台，无横向溢出；反推模型同步；画布编辑和AI回调按最新原文A/B构造请求、取消保留原文。
+- 使用独立浏览器和虚构Key、图片及本地生成视频；提示词广场模式/密码验证及画布SSE响应由浏览器拦截模拟，未改生产配置，未发真实上游或付费生成。证据 `G:/Codex_x/中转站/output/nova-lint-release-2026-10-22/browser/`中的 `local-results.json`与 `public-results.json`，回归清单在同级目录。
+- 带已保存配置重复刷新时出现React #418；本地与上线前旧生产构建均复现，发布后仍存在，保留 `reload-comparison.json`，不能宣称控制台完全无错。本次交互未因此失败，根因及修复另待处理。
 
 ## 待完成
 
-- 当前无本轮功能待办。
-- 2026-10-22修复前检查：前端lint8个错误/15个警告，后端lint通过。该前端待办已于同日稍后在本地修复，ESLint零错误/零警告、443项测试、TypeScript和生产构建通过；未部署。旧记录7错误/10警告及后端错误不再作当前数字；依赖审计仍需另行复核。验收见 `G:/Codex_x/中转站/output/nova-lint-fix-2026-10-22/修复验收报告.md`。
+- 本轮lint修复与提交、推送、上线、交互回归已完成；既有保存配置后刷新React #418仍待定位和修复。
+- 2026-10-22修复前前端lint8错误/15警告已处理，ESLint零错误/零警告、443项测试、TypeScript和生产构建通过，并已随 `fcfe8bc`上线。旧记录7错误/10警告及后端错误不再作当前数字；依赖审计仍需另行复核。发布验收见 `G:/Codex_x/中转站/output/nova-lint-release-2026-10-22/发布验收报告.md`。
 - 历史Docker构建曾报告前端依赖12个漏洞（含1个critical）；2026-10-22未重新完整审计或升级业务依赖，此旧数字不作当前事实。升级依赖需单独评估兼容性，不执行 `npm audit fix --force`。
 - 每次上线后继续补记生产提交号、镜像标签和验收结果。
 
@@ -328,6 +339,7 @@ curl -i https://img.itoo.me/api/nova/config
 
 | 日期 | Git 提交 | 镜像标签 | 结果 |
 | --- | --- | --- | --- |
+| 2026-10-22 21:05 | `2be5b95`、`fcfe8bc` | `godissogood/nova-image-studio:lint-fcfe8bc-20261022` | 已提交推送上线，Node仍22.23.4；ESLint零错误/警告、443项、TypeScript与构建通过；候选后端48项/插件/SQLite通过，本地和公网各11组交互通过；Nova healthy/0重启，其它容器和Caddy未变；既有刷新React #418仍待修，未真实付费生成 |
 | 2026-10-22 | `e3c5a62` + 未提交Dockerfile补丁 | `godissogood/nova-image-studio:node-22.23.4-20261022` | Node22.23.4安全升级，三阶段固定官方版本/digest；前端443项与构建、后端48项及候选插件/SQLite通过；healthy/0重启、SQLite完整；浏览器设置/主页面正常；仅替换Nova，其它容器与Caddy未变；lint当时8错误/15警告，后续已本地修复但未纳入镜像；未付费生图，未commit/push |
 | 2026-09-16 | `e3c5a62` | `godissogood/nova-image-studio:e3c5a62` | Agent 改用实时 Key 状态 Hook；前端 443 项、ESLint、TypeScript、构建通过；线上“先挂载、后保存配置”回归通过；Nova `healthy`，首页和配置 API `200`；GitHub、本地、OVH HEAD 一致；Sub2API、PostgreSQL、Redis 未重启；2026-09-18 重新核验运行状态 |
 | 2026-09-14 | `fe73f27` | `godissogood/nova-image-studio:fe73f27` | 本地/GitHub main/OVH HEAD 一致；Nova `healthy`；首页和配置 API `200`；iToo 工作台视觉、自适应及宽屏导航高度修复；前端 39 文件/442 项、后端 48 项测试与构建通过；线上页面标题确认；Sub2API、PostgreSQL、Redis 未重启；2026-09-15 补记 |
