@@ -294,65 +294,74 @@ export function ImageGenerationWorkbench({
   useEffect(() => {
     if (!referenceDraft?.refImages.length) return;
     if (consumedDraftRef.current === referenceDraft.id) return;
-    consumedDraftRef.current = referenceDraft.id;
-    if (referenceDraft.prompt) {
-      setPrompt(referenceDraft.prompt);
-    }
+    let cancelled = false;
 
-    let activeModel = model;
-    let activeMax = maxImages;
-    if (!supportsReferenceImages(activeModel) || activeMax <= 0) {
-      const switched = findReferenceCapableModel(activeModel);
-      if (!switched) {
-        setUploadError('当前没有支持参考图的模型，请先在设置中配置可编辑模型');
-        onDraftConsumed?.();
-        return;
+    queueMicrotask(() => {
+      if (cancelled || consumedDraftRef.current === referenceDraft.id) return;
+      consumedDraftRef.current = referenceDraft.id;
+      if (referenceDraft.prompt) {
+        setPrompt(referenceDraft.prompt);
       }
-      activeModel = switched;
-      activeMax = getModelMaxRefImages(switched);
-      setModel(switched);
-      const nextSizes = getValidOutputSizes(switched);
-      const nextSize = nextSizes.includes(outputSize) ? outputSize : nextSizes[0];
-      setOutputSize(nextSize);
-      if (nextSize === 'auto') {
-        setAspectRatio('auto');
-        setCustomSize(undefined);
-      } else {
-        const ratios = getAspectRatioOptions(switched, nextSize).map((item) => item.value);
-        if (!ratios.includes(aspectRatio)) setAspectRatio(ratios[0] || '1:1');
-        if (!supportsCustomSize(switched)) setCustomSize(undefined);
-      }
-      setGptImageAdvancedParams(getGptImageAdvancedParamsForModel(switched, gptImageAdvancedParams));
-      const label = MODEL_OPTIONS.find((o) => o.value === switched)?.label || switched;
-      dispatchImageActionToast(`已切换到支持参考图的模型：${label}`, 'info');
-    }
 
-    setPendingFiles((prev) => {
-      const existingIds = new Set(prev.map((file) => file.id));
-      const remainingSlots = Math.max(0, activeMax - prev.length);
-      if (remainingSlots <= 0) {
-        setUploadError(`${MODEL_OPTIONS.find((o) => o.value === activeModel)?.label} 最多支持 ${activeMax} 张参考图`);
-        return prev;
+      let activeModel = model;
+      let activeMax = maxImages;
+      if (!supportsReferenceImages(activeModel) || activeMax <= 0) {
+        const switched = findReferenceCapableModel(activeModel);
+        if (!switched) {
+          setUploadError('当前没有支持参考图的模型，请先在设置中配置可编辑模型');
+          onDraftConsumed?.();
+          return;
+        }
+        activeModel = switched;
+        activeMax = getModelMaxRefImages(switched);
+        setModel(switched);
+        const nextSizes = getValidOutputSizes(switched);
+        const nextSize = nextSizes.includes(outputSize) ? outputSize : nextSizes[0];
+        setOutputSize(nextSize);
+        if (nextSize === 'auto') {
+          setAspectRatio('auto');
+          setCustomSize(undefined);
+        } else {
+          const ratios = getAspectRatioOptions(switched, nextSize).map((item) => item.value);
+          if (!ratios.includes(aspectRatio)) setAspectRatio(ratios[0] || '1:1');
+          if (!supportsCustomSize(switched)) setCustomSize(undefined);
+        }
+        setGptImageAdvancedParams(getGptImageAdvancedParamsForModel(switched, gptImageAdvancedParams));
+        const label = MODEL_OPTIONS.find((o) => o.value === switched)?.label || switched;
+        dispatchImageActionToast(`已切换到支持参考图的模型：${label}`, 'info');
       }
-      const incoming: UploadedFile[] = referenceDraft.refImages
-        .filter((img) => !existingIds.has(img.id))
-        .slice(0, remainingSlots)
-        .map((img) => ({
-          id: img.id,
-          name: img.name,
-          preview: img.dataUrl,
-          dataUrl: img.dataUrl,
-          mimeType: img.mimeType,
-          badge: img.badge || '参考',
-        }));
-      if (incoming.length < referenceDraft.refImages.length) {
-        setUploadError(`${MODEL_OPTIONS.find((o) => o.value === activeModel)?.label} 最多支持 ${activeMax} 张参考图，已添加可容纳的图片`);
-      } else {
-        setUploadError(null);
-      }
-      return incoming.length > 0 ? [...prev, ...incoming] : prev;
+
+      setPendingFiles((prev) => {
+        const existingIds = new Set(prev.map((file) => file.id));
+        const remainingSlots = Math.max(0, activeMax - prev.length);
+        if (remainingSlots <= 0) {
+          setUploadError(`${MODEL_OPTIONS.find((o) => o.value === activeModel)?.label} 最多支持 ${activeMax} 张参考图`);
+          return prev;
+        }
+        const incoming: UploadedFile[] = referenceDraft.refImages
+          .filter((img) => !existingIds.has(img.id))
+          .slice(0, remainingSlots)
+          .map((img) => ({
+            id: img.id,
+            name: img.name,
+            preview: img.dataUrl,
+            dataUrl: img.dataUrl,
+            mimeType: img.mimeType,
+            badge: img.badge || '参考',
+          }));
+        if (incoming.length < referenceDraft.refImages.length) {
+          setUploadError(`${MODEL_OPTIONS.find((o) => o.value === activeModel)?.label} 最多支持 ${activeMax} 张参考图，已添加可容纳的图片`);
+        } else {
+          setUploadError(null);
+        }
+        return incoming.length > 0 ? [...prev, ...incoming] : prev;
+      });
+      onDraftConsumed?.();
     });
-    onDraftConsumed?.();
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- referenceDraft.id is the stable identity; refImages is consumed via ref guard
   }, [maxImages, model, onDraftConsumed, referenceDraft?.id]);
 
@@ -422,7 +431,7 @@ export function ImageGenerationWorkbench({
     } finally {
       setLoading(false);
     }
-  }, [autoLayoutLocked, detectImageAspectRatio, maxImages, model, pendingFiles.length]);
+  }, [autoLayoutLocked, detectImageAspectRatio, maxImages, model, modelLimit.description, pendingFiles.length]);
 
   const handleImportAssets = useCallback(async (selectedAssets: ImageAsset[]) => {
     if (selectedAssets.length === 0) return;

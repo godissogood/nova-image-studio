@@ -1,6 +1,6 @@
 # itoo.me 二开记忆
 
-最后更新：2026-09-14
+最后更新：2026-10-22
 
 ## 项目身份
 
@@ -14,7 +14,88 @@
 
 Git 约定：`origin` 指向 itoo fork，`upstream` 指向官方仓库。生产服务器只跟踪 `origin/main`。
 
+## 当前发布快照（2026-10-22 核验）
+
+- 北京时间18:56，仅替换Nova，Node `v22.23.2` → `v22.23.4`，处理 `CVE-2026-111497`；19:05复查 `healthy`、重启计数0，源站首页/config/queue均200，SQLite `quick_check=ok`。
+- 生产镜像 `godissogood/nova-image-studio:node-22.23.4-20261022`，image ID `sha256:9e41e8e3ab1dc568e2164b0f6e27073288cffcebbd19251ee2ae05556da381c0`；生产 `.env` 持久镜像标签与Compose解析一致。
+- 业务源码仍为 `e3c5a620a699f0711e7ea4a3fecb1b56abac801b`。本地及服务器Dockerfile安全补丁尚未commit/push，未合并上游或更新业务依赖；GitHub实时状态未在本轮确认。
+- 三阶段基础镜像统一固定 `node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d`，digest已核实为官方OCI index。未来更新应保持明确版本并重新核对官方digest。
+- 本地前端443项和生产构建、后端48项/后端lint/插件校验通过；候选镜像隔离复跑后端48项、插件9 fixtures及SQLite写读通过。前端lint当时为8错误/15警告，已于同日稍后在本地修复并通过零警告检查；该源码修复未部署，Node安全镜像不包含它。浏览器公网首页、设置和主要工作台可打开，Base URL只读，控制台0错误/0警告；未做真实Key或付费生成回归。
+- 其它8容器ID/镜像/StartedAt/RestartCount/状态和主Caddy PID均与修复前一致；固定内部上游、共享网络、端口和数据挂载未变。没有重启Sub2API、PostgreSQL、Redis或重载主Caddy。
+- 原有本定制文档未提交内容保留。私有配置与停服后数据备份在 `/root/nova-backups/pre-node-CVE-2026-111497-20261022/`，回滚脚本 `/opt/nova-node-fix-20261022/rollback.py`；旧镜像保留，自动回滚未触发，未演练回滚。
+- 详细报告 `G:/Codex_x/中转站/output/nova-node-fix-2026-10-22/修复验收报告.md`。服务器urllib访问Cloudflare公网域名返回403，浏览器公网验证正常；报告分别记录此探测限制。
+
+## 2026-10-22 前端 lint 修复（本地，未部署）
+
+- 按用户要求修复原先9个文件中的8个ESLint错误和15个警告；涉及草稿导入、设置模型草稿、标注图片加载/重绘、提示词库模式同步、视频历史预览空值保护、缺失的回调依赖、静态导入，以及未使用代码清理。
+- 最终验收：`npm run lint -- --max-warnings 0`零错误/零警告；`npm run test:run`为39个文件443项通过；`npx tsc --noEmit`与`npm run build`通过。测试输出中两条CanvasEditor用例有模拟相对URL解析stderr，但均通过。
+- 未做针对交互的浏览器手工回归；未部署、commit或push。生产服务仍运行Node `v22.23.4`安全镜像及原业务源码。详细验收报告 `G:/Codex_x/中转站/output/nova-lint-fix-2026-10-22/修复验收报告.md`。
+
+## 历史发布快照（2026-09-18 核验）
+
+- 已发布提交：`e3c5a620a699f0711e7ea4a3fecb1b56abac801b`（短号 `e3c5a62`），`fix: sync Agent API key status`。
+- 本地 `main`、GitHub `origin/main` 和 OVH `/opt/nova-image-studio` 的 HEAD 一致。
+- 生产镜像：`godissogood/nova-image-studio:e3c5a62`，Nova 容器为 `running / healthy`；`https://img.itoo.me/` 和 `/api/nova/config` 均为 `200`。
+- 2026-09-16 发布时只替换 Nova；Sub2API、PostgreSQL、Redis 未重启。下方 `fe73f27`、`d6f0bf0`、`0bcb3a2` 均为历史版本。
+- 发布阶段通过前端 443 项测试、ESLint、TypeScript、生产构建和线上浏览器回归。2026-09-18 只重新核验 Git/容器/HTTP 状态，未重新运行测试或付费生图。
+- 当前工作树只有本记忆文档存在未提交修改，其中同时包含 2026-09-15 和本轮记录；后续必须保留，不能回退。
+
 ## 已完成
+
+### 2026-09-16 至 09-18：Agent Key 状态同步修复与生图上游诊断
+
+1. Agent Key 状态根因与修复。
+   - `frontend/src/hooks/useAgentChat.ts` 原来只在首次挂载时读取一次 `hasAnyApiKey()`；设置页后续保存 Key 时，Agent 保留旧状态并在前端误报“请先配置 API 密钥”。
+   - `useAgentChat()` 现改用 `useApiKeyStatus()`，复用既有的同页 `nova-model-registry-updated` 与跨标签页存储监听，保存配置后无需刷新。
+   - `frontend/src/hooks/__tests__/useAgentChat.retrieval.test.ts` 增加回归用例，覆盖 Agent 挂载后再保存 Key 的状态更新。
+
+2. 发布与验收。
+   - 提交 `e3c5a62` 已推送 GitHub `main` 并部署至 OVH；镜像 `godissogood/nova-image-studio:e3c5a62`。
+   - 前端 443 项测试、ESLint、TypeScript 和生产构建通过。
+   - 线上浏览器使用本地测试配置复现“先挂载 Agent、后保存配置”，素材入口立即可用，控制台 0 错误、0 警告；没有使用真实 Key 或发起付费生图。
+   - 回滚用环境文件：`/root/nova-backups/nova-env-pre-e3c5a62-20260916-1647`。
+
+3. 同期生图故障与 Agent Bug 是两条独立链路。
+   - 用户 `woodkang0408@gmail.com`（生产用户 ID 263）的两次 `gpt-image-2.5` 请求已通过 Nova 和 Sub2API，路由到账号 2275 后由上游返回 `no available image quota`。
+   - 两次请求均为 0 图、0 成本、0 扣费；这属于上游图片额度不可用，不是 Agent Key 状态 Bug。
+   - 当时账号 2275 的名称为 `https://img.baofu.eu.cc/`，账号 2294 才是“生图 xkj”。用户随后表示已调整账号，但调整后的生产状态尚未复验。
+
+4. 接续注意。
+   - 若 Agent 再提示缺少 Key，先检查 `useApiKeyStatus()` 事件链和浏览器实际模型配置。
+   - 若工作台与 Agent 都能发出请求但返回 `no available image quota`，应检查 Sub2API 上游账号额度与调度，不能继续归因于前端状态。
+
+### 2026-09-14 至 09-15：工作台界面调整、发布与上下文整理
+
+1. 用户需求与交互偏好。
+   - 工作台原来区域分隔弱、导航紧凑且不够醒目；用户明确要求更舒适的视觉和自适应。
+   - 后续反馈宽屏左侧导航底部不可见、单个按钮撑开布局；这两项是以后改样式和同步官方版本时的重点回归场景。
+   - 用户已明确“继续直接修复”，并反馈处理时间过长；应及时反馈、直接完成已授权的局部修复，避免重复确认。
+
+2. 最终实现与文件边界。
+   - `frontend/src/app/globals.css`：增加 iToo 浅色/深色主题、背景、卡片边框与阴影、导航选中态、间距及移动端和减少动画偏好适配；工作台样式以 `itoo-*` 类为主，主题变量仍是全局变量。
+   - `frontend/src/components/workspace/WorkspaceHeader.tsx`：工作区标题和工具区增加样式挂点，手机端保留品牌标题并调整字号/宽度。
+   - `frontend/src/components/workspace/WorkspaceModeTabs.tsx`：给横向和纵向导航分别加样式类；手机横向滚动，宽屏纵向排列。
+   - `frontend/src/components/workspace/WorkspaceShell.tsx`：左导航使用 `min-h-0`、`top-0`、`overflow-y-auto`；纵向 TabsList 使用 `height: fit-content` / `flex: 0 0 auto`，按钮用 `flex: 0 0 auto` / `height: auto !important`，控制高度与拉伸。
+   - 发布只含以上 4 个界面文件和本记忆文档，共 5 个文件。`fe73f27` 是界面调整和同步记录提交，不能误记为本次又执行了一次官方版本合并；实际官方合并关系见下文 2026-09-05 记录。
+
+3. 已完成的发布验证。
+   - 前端生产构建成功；前端 39 个测试文件、442 项测试通过；后端 48 项测试通过；`git diff --check` 通过。
+   - 用户明确要求部署线上并推送 GitHub，两项均已完成。`git ls-remote origin refs/heads/main` 验证远端为 `fe73f2763f5f542e38b8b074621324861453807f`。
+   - 线上浏览器已打开 `https://img.itoo.me/`，页面标题为 `iToo Image - AI 图像生成器`。这些证据不等于完整生图请求或全部屏幕尺寸视觉验收，不扩大测试结论。
+
+4. 下次本地预览与界面回归。
+   - 本地 Git 根目录是 `G:\Codex_x\中转站\nova-image-studio`；上层工作区存在空 `.git` 目录，但不是可用仓库，不能在那里执行发布 Git 命令。
+   - 本轮使用的预览地址为 `http://127.0.0.1:3000/`，后续先确认端口/进程是否仍在运行。项目根目录 `npm run dev` 会先构建前端，再由后端以 production 模式提供站点，因此不是 HMR；修改后需重新构建。快速前端迭代可用 `npm run dev:frontend`，完整 API 联调按项目 README 配置后端。
+   - 再改导航时重点检查宽屏低高度窗口的底部入口、单个按钮高度、手机导航横向滚动、标题工具区换行、浅色/深色；不要仅凭构建成功判断视觉问题已解决。
+
+### 2026-09-15：Grok 图片 4K 能力核查（只读）
+
+- 当日核对 xAI 官方图像生成文档，`resolution` 公开支持 `1k`（默认）和 `2k`，未开放 `4k`。文档：`https://docs.x.ai/developers/model-capabilities/images/generation#resolution`。这是当日公开 API 的结论，后续模型更新需重新核对。
+- 本站 `frontend/src/lib/nova-models.ts`：旧 `grok-imagine-image` 预设上限为 `1K`；`grok-imagine-image-2.0` 与 `grok-imagine-image-quality` 为 `2K`。旧预设限制属于本站配置，不能反推官方所有旧模型只能 1K。
+- `frontend/src/lib/model-capabilities.ts` 的 Grok 选项和有效性校验限制 1K/2K；即使自定义模型最大档位填 4K，内置 Grok 预设仍截到 1K/2K。`backend/server.js` 的 `getGrokResolution()` 仅识别 1K/2K，其他值省略 `resolution`；因此只增加前端 4K 按钮不能得到真实 4K。
+- Sub2API `backend/internal/service/grok_media.go` 清理 Grok 图片请求时删除 `size`、保留 `resolution`；该转发行为和计费档位兼容逻辑都不是上游支持 4K 的证据。
+- 用户仅询问原因；本轮没有修改模型选项、提交付费生图请求或新增超分能力。可选方案是先生成 2K 再接 AI 超分，或使用直接支持 4K 的其他模型；这不是已实施任务。
+- 站内画布已有的“放大”使用浏览器 Canvas 插值，最长边可到 4096，不是 AI 超分，也不是 Grok 原生 4K；不要把现有缩放功能描述成已接入 AI 超分。
 
 ### 2026-09-14：本轮会话故障定位、图片取回修复与视频插件整理
 
@@ -49,7 +130,7 @@ Git 约定：`origin` 指向 itoo fork，`upstream` 指向官方仓库。生产�
 6. 本轮提交与部署。
    - `0bcb3a2`：Grok 图片同源托管、任务重取、推理强度调整。
    - `d6f0bf0`：视频插件显示名改为“视频插件”。
-   - OVH 当前镜像：`godissogood/nova-image-studio:d6f0bf0`；容器 `healthy`；公网首页和配置 API 返回 `200`；Sub2API 未重启。
+   - 该阶段部署镜像：`godissogood/nova-image-studio:d6f0bf0`；容器 `healthy`；公网首页和配置 API 返回 `200`；Sub2API 未重启。后续已由 `fe73f27` 替代。
    - 测试：前端 442 项、后端 48 项通过；构建通过；本轮按用户要求跳过浏览器验收。
 
 ### 2026-09-05：首次完整同步原作者 3.3.0 版本
@@ -160,11 +241,18 @@ backup/itoo-before-upstream-20260905  (本地定制基线 644864e)
 8. `itoo-internal` 只连接 Nova 与 Sub2API，不得把 PostgreSQL 或 Redis 加入该共享网络或暴露到公网。
 9. 更新 Cloudflare 官方 IP 段时必须先保留 SSH 规则，并在新 SSH 会话和两个公网域名都验证成功后结束维护。
 
+## 2026-10-22 lint 修复发布前浏览器回归
+
+- 用户已明确授权提交、推送、上线与针对性交互浏览器回归。
+- 本地生产构建通过9组真实Edge交互检查：设置保存重开与未保存草稿丢弃、固定Base URL只读；画笔/方框、撤销清空与取消关闭；标注合成转为参考草稿、模式切换不重复；错误图片恢复、无可编辑模型提示；视频空历史、缺URL记录、单屏/分屏与下载禁用恢复；提示词广场常驻/关闭/私密与密码错误重试；390×844手机设置及工作台，无横向溢出。
+- 使用独立浏览器和虚构Key、图片及本地生成视频；提示词广场模式/密码验证由浏览器拦截模拟，未改生产配置，未发付费生成。证据 `G:/Codex_x/中转站/output/nova-lint-release-2026-10-22/browser/`，回归清单在同级目录。
+- 带已保存配置重复刷新时出现React #418；本地与上线前旧生产构建均复现，保留 `reload-comparison.json`，不能宣称控制台完全无错。本次交互未因此失败。上线结果另行补记，不把候选验证当成已经发布。
+
 ## 待完成
 
 - 当前无本轮功能待办。
-- 上游当前 lint 基线不干净：前端存在 7 个错误和 10 个警告，后端存在 1 个未使用函数错误。应在独立维护分支处理，避免与功能升级混在一起。
-- Docker 构建时前端依赖审计报告 12 个漏洞（含 1 个 critical）。升级依赖需要单独评估兼容性，不执行 `npm audit fix --force` 式破坏性更新。
+- 2026-10-22修复前检查：前端lint8个错误/15个警告，后端lint通过。该前端待办已于同日稍后在本地修复，ESLint零错误/零警告、443项测试、TypeScript和生产构建通过；未部署。旧记录7错误/10警告及后端错误不再作当前数字；依赖审计仍需另行复核。验收见 `G:/Codex_x/中转站/output/nova-lint-fix-2026-10-22/修复验收报告.md`。
+- 历史Docker构建曾报告前端依赖12个漏洞（含1个critical）；2026-10-22未重新完整审计或升级业务依赖，此旧数字不作当前事实。升级依赖需单独评估兼容性，不执行 `npm audit fix --force`。
 - 每次上线后继续补记生产提交号、镜像标签和验收结果。
 
 ## 官方升级合并流程
@@ -240,6 +328,9 @@ curl -i https://img.itoo.me/api/nova/config
 
 | 日期 | Git 提交 | 镜像标签 | 结果 |
 | --- | --- | --- | --- |
+| 2026-10-22 | `e3c5a62` + 未提交Dockerfile补丁 | `godissogood/nova-image-studio:node-22.23.4-20261022` | Node22.23.4安全升级，三阶段固定官方版本/digest；前端443项与构建、后端48项及候选插件/SQLite通过；healthy/0重启、SQLite完整；浏览器设置/主页面正常；仅替换Nova，其它容器与Caddy未变；lint当时8错误/15警告，后续已本地修复但未纳入镜像；未付费生图，未commit/push |
+| 2026-09-16 | `e3c5a62` | `godissogood/nova-image-studio:e3c5a62` | Agent 改用实时 Key 状态 Hook；前端 443 项、ESLint、TypeScript、构建通过；线上“先挂载、后保存配置”回归通过；Nova `healthy`，首页和配置 API `200`；GitHub、本地、OVH HEAD 一致；Sub2API、PostgreSQL、Redis 未重启；2026-09-18 重新核验运行状态 |
+| 2026-09-14 | `fe73f27` | `godissogood/nova-image-studio:fe73f27` | 本地/GitHub main/OVH HEAD 一致；Nova `healthy`；首页和配置 API `200`；iToo 工作台视觉、自适应及宽屏导航高度修复；前端 39 文件/442 项、后端 48 项测试与构建通过；线上页面标题确认；Sub2API、PostgreSQL、Redis 未重启；2026-09-15 补记 |
 | 2026-07-15 | `9760aaf` | `godissogood/nova-image-studio:9760aaf` | OVH `healthy`；公网/API `200`；固定上游伪造测试通过；Playwright 页面、默认值、只读属性和控制台验收通过 |
 | 2026-07-15 | `da93aae` | `godissogood/nova-image-studio:da93aae` | OVH `healthy`；模型配置即时生效；Agent/工作台使用配置模型；Nova 内部直连 Sub2API；Cloudflare-only 防火墙验收通过 |
 | 2026-07-16 | `b9011a2` | `godissogood/nova-image-studio:b9011a2` | OVH `healthy`；公网首页与配置 API `200`；品牌改为 `iToo Image`；关于页只保留使用方法和隐私条款；桌面/手机与线上 Playwright 验收通过；控制台 0 错误、0 警告 |

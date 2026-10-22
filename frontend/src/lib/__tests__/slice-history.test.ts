@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SliceAsset, SliceWorkspaceDraft } from '@/lib/slice-types';
 
 // slice-db 走 IndexedDB，在 jsdom 下不可用；历史栈逻辑与持久化无关，直接打桩。
-const saveWorkspace = vi.fn(async (_draft: SliceWorkspaceDraft) => {});
+const saveWorkspace = vi.fn(async (draft: SliceWorkspaceDraft) => {
+  void draft;
+});
 const deletedBlobs: string[] = [];
 
 vi.mock('@/lib/slice-db', () => ({

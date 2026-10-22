@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Database,
   Download,
-  ExternalLink,
   Eye,
   EyeOff,
   ImageIcon,
@@ -17,7 +16,6 @@ import {
   Settings,
   Trash2,
   Upload,
-  Wand2,
   XCircle,
 } from 'lucide-react';
 import {
@@ -39,12 +37,9 @@ import {
   BUILTIN_IMAGE_PRESET_OPTIONS,
   BUILTIN_TEXT_PRESETS,
   BUILTIN_TEXT_PRESET_OPTIONS,
-  DEFAULT_DEFAULTS,
   generateModelId,
   getDefaultTextModelTemplate,
   getTextModelTemplate,
-  getCompleteImageModels,
-  getCompleteTextModels,
   getImageModelOutputSizes,
   isSliceCapableImageModel,
   loadRegistry,
@@ -65,8 +60,6 @@ import { syncDynamicModelExports } from '@/lib/gemini-config';
 import { exportAllData, importAllData, downloadBlob, generateBackupFilename, type BackupProgress as BackupProgressType } from '@/lib/backup-utils';
 import { checkModelsAvailability, type ModelStatus } from '@/lib/ccode-task-client';
 import { hasAnyApiKey } from '@/lib/settings-storage';
-import { BA_RANDOM_URL, BING_WALLPAPER_URL } from '@/lib/constants';
-import { PROMPT_DATA_SOURCES, getPromptSourceLabel } from '@/lib/prompt-gallery-data';
 
 /** 设置弹层的页签。调用方可以指定打开时落在哪一页。 */
 export type SettingsTab = 'models' | 'plugins' | 'backup' | 'about';
@@ -201,15 +194,15 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   // 每次打开都回到调用方指定的那一页：从「插件凭据未配置」的提示条点进来要直达插件页。
   // 用「渲染期按 prop 变化调整 state」而不是 effect，避免先渲染出模型页再跳一帧。
-  const [wasOpen, setWasOpen] = useState(isOpen);
-  if (isOpen !== wasOpen) {
-    setWasOpen(isOpen);
-    if (isOpen) setTab(initialTab);
-  }
-
-  const [imageModels, setImageModels] = useState<ImageModelConfig[]>([]);
-  const [textModels, setTextModels] = useState<TextModelConfig[]>([]);
-  const [defaults, setDefaults] = useState<DefaultModels>(DEFAULT_DEFAULTS);
+  const [wasOpen, setWasOpen] = useState(false);
+  const [initialRegistry] = useState(() => loadRegistry());
+  const [imageModels, setImageModels] = useState<ImageModelConfig[]>(() => initialRegistry.imageModels.map(cloneImageModel));
+  const [textModels, setTextModels] = useState<TextModelConfig[]>(() => initialRegistry.textModels.map(cloneTextModel));
+  const [defaultsDraft, setDefaults] = useState<DefaultModels>(() => normalizeDefaults(
+    initialRegistry.defaults,
+    initialRegistry.imageModels,
+    initialRegistry.textModels,
+  ));
   const [selectedImageModelId, setSelectedImageModelId] = useState('');
   const [selectedTextModelId, setSelectedTextModelId] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -226,29 +219,26 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   const [backupSuccess, setBackupSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const registry = loadRegistry();
-    setImageModels(registry.imageModels.map(cloneImageModel));
-    setTextModels(registry.textModels.map(cloneTextModel));
-    setDefaults(normalizeDefaults(registry.defaults, registry.imageModels, registry.textModels));
-    setSelectedImageModelId(registry.imageModels[0]?.id || '');
-    setSelectedTextModelId(registry.textModels[0]?.id || '');
-    setError(null);
-    setSuccess(null);
-    setModelStatuses(null);
-    setModelCheckError(null);
-    setBackupError(null);
-    setBackupSuccess(null);
-  }, [isOpen]);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) {
+      const registry = loadRegistry();
+      setTab(initialTab);
+      setImageModels(registry.imageModels.map(cloneImageModel));
+      setTextModels(registry.textModels.map(cloneTextModel));
+      setDefaults(normalizeDefaults(registry.defaults, registry.imageModels, registry.textModels));
+      setSelectedImageModelId(registry.imageModels[0]?.id || '');
+      setSelectedTextModelId(registry.textModels[0]?.id || '');
+      setError(null);
+      setSuccess(null);
+      setModelStatuses(null);
+      setModelCheckError(null);
+      setBackupError(null);
+      setBackupSuccess(null);
+    }
+  }
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setDefaults((prev) => {
-      const next = normalizeDefaults(prev, imageModels, textModels);
-      return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
-    });
-  }, [imageModels, isOpen, textModels]);
+  const defaults = normalizeDefaults(defaultsDraft, imageModels, textModels);
 
   const selectedImageModel = useMemo(
     () => imageModels.find((model) => model.id === selectedImageModelId) || null,
@@ -354,7 +344,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
     saveRegistry({
       imageModels,
       textModels,
-      defaults: normalizeDefaults(defaults, imageModels, textModels),
+      defaults,
     });
     syncDynamicModelExports();
     window.dispatchEvent(new Event('nova-model-registry-updated'));

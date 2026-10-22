@@ -432,7 +432,8 @@ export function PluginHistoryList({
             // 所有已完成的可预览视频
             const previewableJobs = jobs.filter(j => j.status === 'completed' && primaryAsset(j)?.url);
             const currentJob = previewableJobs[previewIndex] ?? previewJob;
-            const leftVideo = primaryAsset(currentJob)?.url!;
+            const leftVideo = primaryAsset(currentJob)?.url;
+            if (!leftVideo) return null;
             const rightVideo = previewMode === 'split' && splitIndex !== null
               ? primaryAsset(previewableJobs[splitIndex] ?? previewJob)?.url
               : null;
@@ -837,9 +838,11 @@ function JobCard({
                 操作
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={onDownload}>
-                  <Download className="mr-1.5 size-3.5" />
-                  下载视频
+                <DropdownMenuItem onClick={onDownload} disabled={downloadingId === job.id}>
+                  {downloadingId === job.id
+                    ? <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                    : <Download className="mr-1.5 size-3.5" />}
+                  {downloadingId === job.id ? '正在下载...' : '下载视频'}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => onCopyLink(asset.url)}>
                   {copiedId === job.id

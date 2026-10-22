@@ -2,7 +2,7 @@
 // 模型列表从 nova-models 注册表动态读取，不再硬编码
 // system prompt 模板保留在此文件
 
-import type { TextModelConfig } from '@/lib/nova-models';
+import { getCompleteTextModels, loadRegistry, type TextModelConfig } from '@/lib/nova-models';
 import { getDefaultConfiguredTextModel, getConfiguredTextModel } from '@/lib/model-endpoints';
 import { getTextProviderDescription } from '@/lib/nova-text-protocol';
 
@@ -65,7 +65,6 @@ export function getReverseModelOptions(textModels: TextModelConfig[]): ReversePr
  */
 export function getReversePromptModelOptionsList(): ReversePromptModelOption[] {
   if (typeof window === 'undefined') return [];
-  const { loadRegistry, getCompleteTextModels } = require('@/lib/nova-models');
   const registry = loadRegistry();
   return getReversePromptModelOptions(getCompleteTextModels(registry));
 }

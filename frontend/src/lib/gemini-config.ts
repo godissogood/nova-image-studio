@@ -72,6 +72,7 @@ export function getModelImageLimits(): Record<string, ModelImageLimit> {
 export const MODEL_IMAGE_LIMITS: Record<string, ModelImageLimit> = {};
 
 export function supportsTokenMode(_modelId: string): boolean {
+  void _modelId;
   return false;
 }
 
@@ -80,6 +81,7 @@ export function stripTokenSuffix(modelId: string): string {
 }
 
 export function isTokenModel(modelId: string): boolean {
+  void modelId;
   return false;
 }
 
