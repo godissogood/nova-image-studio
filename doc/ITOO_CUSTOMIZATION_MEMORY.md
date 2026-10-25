@@ -4,7 +4,7 @@
 
 本地 `main` 与 GitHub `origin/main` 已推进至 `e5c2eb99723a27bd4b9085dfa750a219bdde48fc`。线上 `https://img.itoo.me` 运行镜像 `godissogood/nova-image-studio:release-20261026-e5c2eb9`，image ID `sha256:9d26d6a63c34f67e6e66d49d763265b764daaab43ee52428af2a65d617614266`，源码 revision 精确匹配，Node `v22.23.4`、healthy、0重启。公网首页/config API为200；MCP检查设置弹窗和视频插件面板通过，控制台无 error/warn；未调用真实模型。
 
-本地 lint、前端76文件/708项、TypeScript、后端126项、插件校验、生产构建和 diff check 通过；固定 Node 的服务器候选后端126/126、插件、SQLite和隔离启动均通过。发布前队列0，切换后队列0、生产 SQLite `quick_check=ok`；其他容器及Caddy未变化，原数据挂载、回环端口、`itoo-internal`和内部上游保持，Compose 日志轮转20m×5生效。服务器 `.env` 与Compose、SQLite一致性副本及媒体目录备份位于 `/root/nova-backups/pre-nova-e5c2eb9-20261026/`；回滚脚本 `/opt/nova-releases/nova-20261026-e5c2eb9/rollback.py`。服务器原 Git 工作树及Compose修改予以保留，部署镜像由GitHub精确提交归档构建。过程与证据见 `doc/LOCAL_DEVELOPMENT_AND_RELEASE.md` 及工作区 `output/nova-release-2026-10-26/`。Mem0 使用空间 `project:itoo-relay`，本轮摘要待完成回读核验。
+本地 lint、前端76文件/708项、TypeScript、后端126项、插件校验、生产构建和 diff check 通过；固定 Node 的服务器候选后端126/126、插件、SQLite和隔离启动均通过。发布前队列0，切换后队列0、生产 SQLite `quick_check=ok`；其他容器及Caddy未变化，原数据挂载、回环端口、`itoo-internal`和内部上游保持，Compose 日志轮转20m×5生效。服务器 `.env` 与Compose、SQLite一致性副本及媒体目录备份位于 `/root/nova-backups/pre-nova-e5c2eb9-20261026/`；回滚脚本 `/opt/nova-releases/nova-20261026-e5c2eb9/rollback.py`。服务器原 Git 工作树及Compose修改予以保留，部署镜像由GitHub精确提交归档构建。过程与证据见 `doc/LOCAL_DEVELOPMENT_AND_RELEASE.md` 及工作区 `output/nova-release-2026-10-26/`。Mem0 交接已保存至 `project:itoo-relay`，事件 `nova-release-20261026-e5c2eb9`；独立 GET 内容一致，MCP 检索命中。
 
 ## 设置保存提示与视频插件凭据保护（2026-10-26，本地预览）
 
