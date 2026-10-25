@@ -1,13 +1,13 @@
 # iToo Image / Nova 本地开发与线上发布
 
-2026-10-23，北京时间。开发仓库：`G:\Codex_x\中转站\nova-image-studio`；正式入口：`https://img.itoo.me`。
+更新于2026-10-26，Asia/Shanghai。开发仓库：`G:\Codex_x\中转站\nova-image-studio`；正式入口：`https://img.itoo.me`。
 
 ## 当前代码与线上版本
 
-- 本地和 GitHub `origin/main` 已提交的 HEAD 都是 `1b65dcbb1f878a94e530cb7455b1bfbfc1564c58`，这是发布记录文档提交。
-- 线上 Nova 3.4.0 的实际业务提交是 `d27f6cbe21ef8435d74679c6a6fd2af16e314fd6`。本地包含该提交；它到上述 HEAD 之间仅有文档差异。
-- 截至本次核查，官方 `upstream/main` 仍是 `b8cd44cc083a0429f8df6a7c9fc5b935b7ae0731`，已完整合入，保留 iToo 的界面、模型配置、媒体和内部转发定制。以后判断是否最新应重新查询远端。
-- 本次本地补了开发启动修复、`dev:local` 命令与本文档，尚未提交或部署；此前日志轮转模板的5行修改也保留在工作树。线上仍运行上面的原业务提交。
+- 本地 `main` 与 GitHub `origin/main` 当前提交为 `e5c2eb99723a27bd4b9085dfa750a219bdde48fc`。线上镜像 `godissogood/nova-image-studio:release-20261026-e5c2eb9` 的 revision 精确匹配该提交，image ID 为 `sha256:9d26d6a63c34f67e6e66d49d763265b764daaab43ee52428af2a65d617614266`。
+- 线上容器使用 Node `v22.23.4`，healthy、0重启。数据仍挂载于 `/opt/nova-image-studio/data`，端口仅绑定 `127.0.0.1:3000`，网络为 `itoo-internal`，内部上游为 `http://sub2api:8080`。服务器容器日志轮转 `20m × 5` 已生效。
+- 服务器 Git 工作树 `/opt/nova-image-studio` 保留其原有 `deploy/ovh/docker-compose.yml` 修改，未强行切换工作树；本次镜像由 GitHub 精确提交归档构建。运行容器记录的 Compose 文件为 `/opt/nova-releases/nova-20261026-e5c2eb9/source/deploy/ovh/docker-compose.yml`，项目目录仍设为 `/opt/nova-image-studio/deploy/ovh`，所以数据路径没有变化。
+- 本轮发布前官方 `upstream/main` 曾核对为 `b8cd44cc083a0429f8df6a7c9fc5b935b7ae0731` 并已合入；这是2026-10-25历史核对值，不代表本轮再次查询官方远端。
 
 ## 日常开发：一个入口同时运行前端与后端
 
@@ -63,10 +63,20 @@ npm start
 4. 更新持久 Compose 镜像标签，只重建 `nova-image-studio`，保留数据挂载、回环端口和 `itoo-internal`。正常发布 Nova 无需重建正式 Sub2API、数据库、Redis或Caddy。
 5. 检查容器健康、实际源码revision、内网上游和公网资源，执行本次修改的浏览器交互回归；失败时切回旧镜像，避免用旧数据覆盖新任务。
 
-历史发布脚本 `output/nova-upgrade-release-2026-10-22/release.py` 固定了旧提交、标签和发布前状态，应作为已验收流程的参考。新发布应生成对应本次提交的参数/脚本，不能把旧脚本直接重跑当通用部署命令。部署前还需处理服务器现有的5行日志模板修改。
+历史发布脚本 `output/nova-upgrade-release-2026-10-22/release.py` 固定了旧提交、标签和发布前状态，只能作为流程参考。本轮生成了独立发布流程 `output/nova-release-2026-10-26/release.py` 与对应阶段脚本，没有重跑旧脚本。
 
-## 本次验证记录
+## 2026-10-23 开发入口验证
 
 本次使用独立本地数据库/媒体目录、关闭模型目标，只检查开发模式启动、页面与API。修复后首页、配置接口和插件接口均200；后端lint通过、现有124项测试通过。未发真实模型调用，未修改生产数据，未部署本次修复。本地测试服务在检查后关闭。
 
-最新证据与运行时间见工作区 `output/nova-dev-workflow-2026-10-23/`。本次启动检查不代表全部界面交互或付费模型已验收。
+证据见工作区 `output/nova-dev-workflow-2026-10-23/`。该启动检查不代表全部界面交互或付费模型已验收。
+
+## 2026-10-26 发布验收
+
+本地验证：`npm run lint`、`npm run test:run`（76文件/708项）、`npx tsc --noEmit`、`npm --prefix backend test`（126项）、`npm --prefix backend run plugins:verify`、`npm run build` 与 `git diff --check` 均通过。Vitest 保留已知的 JSX 非布尔属性提示和 jsdom 相对插件API URL错误日志，测试退出码为0。
+
+服务器候选验证基于固定 Node `v22.23.4` 镜像：后端126/126、插件校验、better-sqlite3 原生模块和隔离候选容器首页/config API 通过。公网 `https://img.itoo.me/` 与 `/api/nova/config` 均200。MCP 在1604×889浏览器检查设置弹窗和视频插件页，Base URL 为只读、API Key 为密码框、“保存并检查”可见；控制台 error/warn 为空，未提交配置或调用真实模型。
+
+切换前任务队列计数均为0。切换后 Nova healthy/0重启、源码 revision 与目标提交一致、Node仍为 `v22.23.4`，首页/config API为200，SQLite `quick_check=ok`、队列仍为0；其他容器ID和 Caddy PID 未变化，数据挂载、回环端口、`itoo-internal` 与内部上游保持，日志轮转 `20m × 5` 生效。服务器 `.env`、Compose、SQLite在线一致性副本与媒体目录备份：`/root/nova-backups/pre-nova-e5c2eb9-20261026/`。旧镜像 `godissogood/nova-image-studio:upgrade-d27f6cb-20261022` 保留；回滚入口：`sudo python3 /opt/nova-releases/nova-20261026-e5c2eb9/rollback.py`。
+
+浏览器及服务器证据见工作区 `output/nova-release-2026-10-26/`，包括 `before.json`、`candidate.json`、`deploy.json`、`after.json` 和构建日志。发布未发送真实模型请求。

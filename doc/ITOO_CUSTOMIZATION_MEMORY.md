@@ -1,5 +1,11 @@
 # itoo.me 二开记忆
 
+## Nova 最新版推送与生产上线（2026-10-26）
+
+本地 `main` 与 GitHub `origin/main` 已推进至 `e5c2eb99723a27bd4b9085dfa750a219bdde48fc`。线上 `https://img.itoo.me` 运行镜像 `godissogood/nova-image-studio:release-20261026-e5c2eb9`，image ID `sha256:9d26d6a63c34f67e6e66d49d763265b764daaab43ee52428af2a65d617614266`，源码 revision 精确匹配，Node `v22.23.4`、healthy、0重启。公网首页/config API为200；MCP检查设置弹窗和视频插件面板通过，控制台无 error/warn；未调用真实模型。
+
+本地 lint、前端76文件/708项、TypeScript、后端126项、插件校验、生产构建和 diff check 通过；固定 Node 的服务器候选后端126/126、插件、SQLite和隔离启动均通过。发布前队列0，切换后队列0、生产 SQLite `quick_check=ok`；其他容器及Caddy未变化，原数据挂载、回环端口、`itoo-internal`和内部上游保持，Compose 日志轮转20m×5生效。服务器 `.env` 与Compose、SQLite一致性副本及媒体目录备份位于 `/root/nova-backups/pre-nova-e5c2eb9-20261026/`；回滚脚本 `/opt/nova-releases/nova-20261026-e5c2eb9/rollback.py`。服务器原 Git 工作树及Compose修改予以保留，部署镜像由GitHub精确提交归档构建。过程与证据见 `doc/LOCAL_DEVELOPMENT_AND_RELEASE.md` 及工作区 `output/nova-release-2026-10-26/`。Mem0 使用空间 `project:itoo-relay`，本轮摘要待完成回读核验。
+
 ## 设置保存提示与视频插件凭据保护（2026-10-26，本地预览）
 
 设置弹窗底部原先以左侧文字提示保存结果，现改用顶部居中的 Toast，显示5秒并可手动关闭；错误提示带 `role="alert"` 与 assertive live region，成功/普通提示使用 status/polite。设置保存成功、配置不完整、浏览器存储失败和模型“保存并检查”结果均复用该 Toast。
