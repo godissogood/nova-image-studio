@@ -9,7 +9,9 @@ import {
 } from '@/lib/itoo-config';
 import {
   BUILTIN_IMAGE_PRESETS,
+  BUILTIN_TEXT_PRESETS,
   DEFAULT_TEXT_MODEL_TEMPLATES,
+  getDefaultTextModelTemplate,
   loadRegistry,
   saveRegistry,
   type NovaModelRegistry,
@@ -71,6 +73,11 @@ describe('itoo model defaults', () => {
     expect(DEFAULT_TEXT_MODEL_ID).toBe('gpt-5.5');
     expect(Object.values(BUILTIN_IMAGE_PRESETS).every((model) => model.baseUrl === ITOO_API_BASE_URL)).toBe(true);
     expect(DEFAULT_TEXT_MODEL_TEMPLATES.every((model) => model.baseUrl === ITOO_API_BASE_URL)).toBe(true);
+    expect(BUILTIN_TEXT_PRESETS['gpt-6-sol'].modelId).toBe('gpt-6-sol');
+    expect(BUILTIN_TEXT_PRESETS['gpt-6.1-sol'].name).toContain('推荐');
+    expect(BUILTIN_TEXT_PRESETS['grok-4.7'].name).toContain('推荐');
+    expect(getDefaultTextModelTemplate('openai-responses').id).toBe('gpt-6.1-sol');
+    expect(getDefaultTextModelTemplate('openai-chat-completions').id).toBe('grok-4.7');
   });
 
   it('normalizes tampered registry base urls before use and persistence', () => {

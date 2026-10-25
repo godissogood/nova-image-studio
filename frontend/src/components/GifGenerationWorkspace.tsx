@@ -436,12 +436,16 @@ export function GifGenerationWorkspace({ wideMode = false, hasApiKey, onConfigur
   }, [workflow.gridImageUrl, workflow.job]);
 
   return (
-    <div ref={dropRef} className="space-y-4">
-      <div className={cn(
-        'grid grid-cols-1 gap-4 md:grid-cols-2 md:auto-rows-fr',
-        wideMode && 'xl:mx-auto xl:max-w-[1500px] xl:grid-cols-[minmax(420px,0.85fr)_minmax(0,1.15fr)]'
-      )}>
+    <div
+      ref={dropRef}
+      className={cn(
+        'space-y-4',
+        wideMode && 'grid min-h-0 flex-1 items-stretch gap-5 xl:grid-cols-[minmax(400px,0.85fr)_minmax(0,1.25fr)] xl:space-y-0'
+      )}
+    >
+      <div className={cn(wideMode && 'flex min-h-0 h-full flex-col')}>
         <GifParametersPanel
+          wideMode={wideMode}
           prompt={prompt}
           onPromptChange={setPrompt}
           model={model}
@@ -473,7 +477,11 @@ export function GifGenerationWorkspace({ wideMode = false, hasApiKey, onConfigur
           onOptimize={handleOptimize}
           onClear={handleClearClick}
         />
+      </div>
+
+      <div className={cn(wideMode && 'flex min-h-0 h-full flex-col')}>
         <GifReviewPanel
+          wideMode={wideMode}
           status={status}
           job={workflow.job}
           gridImageUrl={workflow.gridImageUrl}
@@ -508,12 +516,6 @@ export function GifGenerationWorkspace({ wideMode = false, hasApiKey, onConfigur
           gridActionPayload={gridActionPayload}
         />
       </div>
-
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        系统会自动把生成网格图并切片为GIF，搭配你填写的主题与可选的参考图，生成 3×4 = 12 帧的网格底图，再在本地切片合成 GIF。
-        网格图分辨率固定为 3264×2448（单帧 816×816 正方形），仅显示支持 4K 自定义分辨率的 image 系列模型。
-        banana 系列不支持当前动图网格所需的自定义分辨率，因此这里不提供选择。
-      </p>
 
       {previewOpen && workflow.gridImageUrl && createPortal(
         <HistoryImagePreview

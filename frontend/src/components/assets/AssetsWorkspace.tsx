@@ -610,12 +610,9 @@ export function AssetsWorkspace({ wideMode = false, active = true }: AssetsWorks
   return (
     <section className={cn('min-w-0 space-y-4 overflow-hidden', wideMode && 'xl:flex xl:h-full xl:min-h-0 xl:flex-col')}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h3 className="text-base font-medium text-foreground">我的素材</h3>
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-xs text-muted-foreground">共 {assets.length} 项 · 当前 {filteredAssets.length} 项</p>
-            <StorageEstimate totalBytes={totalBytes} />
-          </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-xs text-muted-foreground">共 {assets.length} 项 · 当前 {filteredAssets.length} 项</p>
+          <StorageEstimate totalBytes={totalBytes} />
         </div>
         <div className="flex items-center gap-2">
           <Button

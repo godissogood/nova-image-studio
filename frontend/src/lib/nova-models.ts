@@ -39,6 +39,8 @@ export interface ImageModelConfig {
   protocol: ProviderProtocol;
   name: string;
   modelId: string;
+  customModelId?: string;
+  useCustomModelId?: boolean;
   apiKey: string;
   baseUrl: string;
   builtinPreset: BuiltinImagePresetId;
@@ -52,6 +54,8 @@ export interface TextModelConfig {
   protocol: TextProviderProtocol;
   name: string;
   modelId: string;
+  customModelId?: string;
+  useCustomModelId?: boolean;
   apiKey: string;
   baseUrl: string;
   note?: string;
@@ -60,11 +64,14 @@ export interface TextModelConfig {
 
 export type BuiltinTextPresetId =
   | 'gpt-5.5'
+  | 'gpt-6-sol'
+  | 'gpt-6.1-sol'
   | 'gpt-5.6-sol'
   | 'gpt-5.6-terra'
   | 'gpt-6-astra'
   | 'grok-4.5'
   | 'grok-4.6'
+  | 'grok-4.7'
   | 'gemini-2.5-flash'
   | 'claude-sonnet-4'
   | 'openai-compatible-chat';
@@ -282,6 +289,12 @@ export const BUILTIN_IMAGE_PRESET_OPTIONS = Object.values(BUILTIN_IMAGE_PRESETS)
 }));
 
 export const BUILTIN_TEXT_PRESETS: Record<BuiltinTextPresetId, BuiltinTextPreset> = {
+  'gpt-6-sol': {
+    id: 'gpt-6-sol', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 6 Sol', modelId: 'gpt-6-sol', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
+  },
+  'gpt-6.1-sol': {
+    id: 'gpt-6.1-sol', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 6.1 Sol（推荐）', modelId: 'gpt-6.1-sol', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
+  },
   'gpt-5.5': {
     id: 'gpt-5.5', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 5.5', modelId: 'gpt-5.5', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
   },
@@ -289,7 +302,7 @@ export const BUILTIN_TEXT_PRESETS: Record<BuiltinTextPresetId, BuiltinTextPreset
     id: 'gpt-5.6-sol', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 5.6 Sol', modelId: 'gpt-5.6-sol', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
   },
   'gpt-5.6-terra': {
-    id: 'gpt-5.6-terra', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 5.6 Terra（推荐）', modelId: 'gpt-5.6-terra', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
+    id: 'gpt-5.6-terra', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 5.6 Terra', modelId: 'gpt-5.6-terra', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
   },
   'gpt-6-astra': {
     id: 'gpt-6-astra', provider: 'gpt', protocol: 'openai-responses', name: 'GPT 6 Astra', modelId: 'gpt-6-astra', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-responses'),
@@ -298,7 +311,10 @@ export const BUILTIN_TEXT_PRESETS: Record<BuiltinTextPresetId, BuiltinTextPreset
     id: 'grok-4.5', provider: 'grok', protocol: 'openai-chat-completions', name: 'Grok 4.5', modelId: 'grok-4.5', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-chat-completions'),
   },
   'grok-4.6': {
-    id: 'grok-4.6', provider: 'grok', protocol: 'openai-chat-completions', name: 'Grok 4.6（推荐）', modelId: 'grok-4.6', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-chat-completions'),
+    id: 'grok-4.6', provider: 'grok', protocol: 'openai-chat-completions', name: 'Grok 4.6', modelId: 'grok-4.6', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-chat-completions'),
+  },
+  'grok-4.7': {
+    id: 'grok-4.7', provider: 'grok', protocol: 'openai-chat-completions', name: 'Grok 4.7（推荐）', modelId: 'grok-4.7', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('openai-chat-completions'),
   },
   'gemini-2.5-flash': {
     id: 'gemini-2.5-flash', provider: 'google', protocol: 'google-gemini', name: 'Gemini 2.5 Flash', modelId: 'gemini-2.5-flash', baseUrl: ITOO_API_BASE_URL, note: getTextProviderDescription('google-gemini'),
@@ -318,12 +334,15 @@ export const BUILTIN_TEXT_PRESET_OPTIONS = Object.values(BUILTIN_TEXT_PRESETS).m
 
 /** Backwards-compatible template list used by existing callers. */
 export const DEFAULT_TEXT_MODEL_TEMPLATES = [
+  BUILTIN_TEXT_PRESETS['gpt-6-sol'],
+  BUILTIN_TEXT_PRESETS['gpt-6.1-sol'],
   BUILTIN_TEXT_PRESETS['gpt-5.5'],
   BUILTIN_TEXT_PRESETS['gpt-5.6-sol'],
   BUILTIN_TEXT_PRESETS['gpt-5.6-terra'],
   BUILTIN_TEXT_PRESETS['gpt-6-astra'],
   BUILTIN_TEXT_PRESETS['grok-4.5'],
   BUILTIN_TEXT_PRESETS['grok-4.6'],
+  BUILTIN_TEXT_PRESETS['grok-4.7'],
   BUILTIN_TEXT_PRESETS['gemini-2.5-flash'],
   BUILTIN_TEXT_PRESETS['claude-sonnet-4'],
   BUILTIN_TEXT_PRESETS['openai-compatible-chat'],
@@ -331,8 +350,8 @@ export const DEFAULT_TEXT_MODEL_TEMPLATES = [
 
 export function getDefaultTextModelTemplate(protocol: TextProviderProtocol) {
   const defaultId: Record<TextProviderProtocol, BuiltinTextPresetId> = {
-    'openai-responses': 'gpt-5.5',
-    'openai-chat-completions': 'openai-compatible-chat',
+    'openai-responses': 'gpt-6.1-sol',
+    'openai-chat-completions': 'grok-4.7',
     'anthropic-messages': 'claude-sonnet-4',
     'google-gemini': 'gemini-2.5-flash',
   };
@@ -396,6 +415,8 @@ function normalizeImageModelConfig(raw: Partial<ImageModelConfig>): ImageModelCo
     protocol,
     name: String(raw.name || '').trim(),
     modelId: String(raw.modelId || '').trim(),
+    customModelId: typeof raw.customModelId === 'string' ? raw.customModelId : String(raw.modelId || '').trim(),
+    useCustomModelId: raw.useCustomModelId !== false,
     apiKey: String(raw.apiKey || '').trim(),
     baseUrl: ITOO_API_BASE_URL,
     builtinPreset: presetId,
@@ -435,6 +456,8 @@ function normalizeTextModelConfig(raw: Partial<TextModelConfig>): TextModelConfi
     protocol,
     name: String(raw.name || '').trim(),
     modelId: String(raw.modelId || '').trim(),
+    customModelId: typeof raw.customModelId === 'string' ? raw.customModelId : String(raw.modelId || '').trim(),
+    useCustomModelId: raw.useCustomModelId !== false,
     apiKey: String(raw.apiKey || '').trim(),
     baseUrl: ITOO_API_BASE_URL,
     note: typeof raw.note === 'string' ? raw.note : (template.note || getTextProviderDescription(protocol)),
@@ -613,6 +636,8 @@ export function deriveImageAndTextModels(providers: ProviderConfig[]): {
           protocol,
           name: String(entry.name || '').trim() || entry.modelId,
           modelId: entry.modelId,
+          customModelId: entry.customModelId ?? entry.modelId,
+          useCustomModelId: entry.useCustomModelId !== false,
           apiKey,
           baseUrl,
           builtinPreset: presetId,
@@ -638,6 +663,8 @@ export function deriveImageAndTextModels(providers: ProviderConfig[]): {
           protocol,
           name: String(entry.name || '').trim() || entry.modelId,
           modelId: entry.modelId,
+          customModelId: entry.customModelId ?? entry.modelId,
+          useCustomModelId: entry.useCustomModelId !== false,
           apiKey,
           baseUrl,
           note: entry.note || getTextProviderDescription(protocol),

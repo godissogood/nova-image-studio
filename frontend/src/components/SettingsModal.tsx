@@ -26,14 +26,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ProviderSettingsPanel } from '@/components/ProviderSettingsPanel';
-import { reconcileModelProviders, type ProviderConfig } from '@/lib/provider-registry';
+import { CommonModelSettings } from '@/components/settings/CommonModelSettings';
+import { SettingsSectionHeading } from '@/components/settings/SettingsSectionHeading';
+import { WorkflowModelSettings } from '@/components/settings/WorkflowModelSettings';
+import { reconcileModelProviders } from '@/lib/provider-registry';
 import { PluginsSettings } from '@/components/settings/PluginsSettings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { BackupProgress } from '@/components/BackupProgress';
+import { Toast, type ToastData } from '@/components/workspace/Toast';
 import {
   BUILTIN_IMAGE_PRESETS,
   BUILTIN_IMAGE_PRESET_OPTIONS,
@@ -46,16 +49,14 @@ import {
   isSliceCapableImageModel,
   loadRegistry,
   saveRegistry,
-  deriveImageAndTextModels,
   type DefaultModels,
   type ImageModelConfig,
   type ProviderProtocol,
   type TextModelConfig,
-  type BuiltinTextPreset,
   type BuiltinTextPresetId,
+  type BuiltinTextPreset,
 } from '@/lib/nova-models';
 import {
-  getTextProviderDescription,
   getTextProviderLabel,
   type TextProviderProtocol,
 } from '@/lib/nova-text-protocol';
@@ -63,9 +64,10 @@ import { syncDynamicModelExports } from '@/lib/gemini-config';
 import { exportAllData, importAllData, downloadBlob, generateBackupFilename, type BackupProgress as BackupProgressType } from '@/lib/backup-utils';
 import { checkModelsAvailability, type ModelStatus } from '@/lib/ccode-task-client';
 import { hasAnyApiKey } from '@/lib/settings-storage';
+import { fetchModelIds } from '@/lib/model-id-client';
 
 /** 设置弹层的页签。调用方可以指定打开时落在哪一页。 */
-export type SettingsTab = 'models' | 'providers' | 'plugins' | 'backup' | 'about';
+export type SettingsTab = 'models' | 'plugins' | 'backup' | 'about';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -83,14 +85,25 @@ function cloneTextModel(model: TextModelConfig): TextModelConfig {
   return { ...model };
 }
 
-function createImageModelDraft(): ImageModelConfig {
+function nextConfigName(prefix: '图片模型' | '文本模型', models: readonly { name: string }[]): string {
+  const pattern = new RegExp(`^${prefix}(\\d+)$`);
+  const highest = models.reduce((max, model) => {
+    const match = model.name.match(pattern);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `${prefix}${highest + 1}`;
+}
+
+function createImageModelDraft(name: string, apiKey = ''): ImageModelConfig {
   const preset = BUILTIN_IMAGE_PRESETS['gpt-image-2'];
   return {
     id: generateModelId('img'),
     protocol: preset.protocol,
-    name: '',
-    modelId: '',
-    apiKey: '',
+    name,
+    modelId: preset.modelId,
+    customModelId: preset.modelId,
+    useCustomModelId: true,
+    apiKey,
     baseUrl: preset.baseUrl,
     builtinPreset: preset.id,
     maxRefImages: preset.maxRefImages,
@@ -99,14 +112,16 @@ function createImageModelDraft(): ImageModelConfig {
   };
 }
 
-function createTextModelDraft(): TextModelConfig {
-  const template = getTextModelTemplate('gpt-5.5');
+function createTextModelDraft(name: string, apiKey = ''): TextModelConfig {
+  const template = getTextModelTemplate('gpt-6.1-sol');
   return {
     id: generateModelId('txt'),
     protocol: template.protocol,
-    name: '',
-    modelId: '',
-    apiKey: '',
+    name,
+    modelId: template.modelId,
+    customModelId: template.modelId,
+    useCustomModelId: true,
+    apiKey,
     baseUrl: template.baseUrl,
     note: template.note,
     builtinTemplate: template.id,
@@ -139,15 +154,93 @@ const TEXT_PROVIDER_META: Record<BuiltinTextPreset['provider'], { label: string;
 
 function TextProviderBadge({ provider }: { provider: BuiltinTextPreset['provider'] }) {
   const meta = TEXT_PROVIDER_META[provider];
-  return <span className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${meta.className}`}>{meta.label}</span>;
+  return <span className={`inline-flex shrink-0 items-center rounded border px-2 py-0.5 text-xs font-semibold leading-none ${meta.className}`}>{meta.label}</span>;
 }
 
 function ImageProviderBadge({ protocol }: { protocol: ProviderProtocol }) {
   const meta = IMAGE_PROVIDER_META[protocol];
   return (
-    <span className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${meta.className}`}>
+    <span className={`inline-flex shrink-0 items-center rounded border px-2 py-0.5 text-xs font-semibold leading-none ${meta.className}`}>
       {meta.label}
     </span>
+  );
+}
+
+function textProviderForProtocol(protocol: TextProviderProtocol): BuiltinTextPreset['provider'] {
+  if (protocol === 'google-gemini') return 'google';
+  if (protocol === 'anthropic-messages') return 'anthropic';
+  return 'gpt';
+}
+
+function getModelListProtocol(protocol: ProviderProtocol | TextProviderProtocol): string {
+  if (protocol === 'google' || protocol === 'google-gemini') return 'google-gemini';
+  if (protocol === 'anthropic-messages') return 'anthropic-messages';
+  return 'openai';
+}
+
+interface ModelIdModeFieldProps {
+  kindLabel: '图片模型' | '文本模型';
+  modelId: string;
+  customModelId: string;
+  useCustomModelId: boolean;
+  onModeChange: (useCustomModelId: boolean) => void;
+  onCustomModelIdChange: (value: string) => void;
+}
+
+function ModelIdModeField({ kindLabel, modelId, customModelId, useCustomModelId, onModeChange, onCustomModelIdChange }: ModelIdModeFieldProps) {
+  return (
+    <div className="min-w-0 space-y-2">
+      <div className="flex min-h-5 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <label className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-foreground">
+          <span>模型 ID 自定义</span><span className="text-xs font-normal text-muted-foreground">要调用的模型</span>
+        </label>
+        <div className="flex shrink-0 items-center gap-2">
+          <Switch aria-label={`${kindLabel}自定义模型 ID`} checked={useCustomModelId} onCheckedChange={onModeChange} />
+        </div>
+      </div>
+      <Input className="h-11" aria-label={`${kindLabel}自定义模型 ID`} value={useCustomModelId ? customModelId : modelId} disabled={!useCustomModelId}
+        onChange={(event) => onCustomModelIdChange(event.target.value)} />
+    </div>
+  );
+}
+
+interface ModelIdLoadFieldProps {
+  kindLabel: '图片模型' | '文本模型';
+  modelId: string;
+  modelIds: string[];
+  apiKey: string;
+  useCustomModelId: boolean;
+  loading: boolean;
+  error?: string;
+  onModeChange: (useCustomModelId: boolean) => void;
+  onModelIdChange: (value: string) => void;
+  onLoad: () => void;
+}
+
+function ModelIdLoadField({ kindLabel, modelId, modelIds, apiKey, useCustomModelId, loading, error, onModeChange, onModelIdChange, onLoad }: ModelIdLoadFieldProps) {
+  const options = modelIds.map(id => ({ value: id, label: id }));
+  if (!useCustomModelId && modelId && !modelIds.includes(modelId)) {
+    options.unshift({ value: modelId, label: `${modelId}（当前配置）` });
+  }
+
+  return (
+    <div className="min-w-0 space-y-2">
+      <div className="flex min-h-5 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <label className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-foreground">
+          <span>模型 ID 加载</span><span className="text-xs font-normal text-muted-foreground">填写 API 后载入模型并选择</span>
+        </label>
+        <Switch aria-label={`${kindLabel}从 API 载入模型 ID`} checked={!useCustomModelId} onCheckedChange={(enabled) => onModeChange(!enabled)} />
+      </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <Select ariaLabel={`${kindLabel}载入的模型 ID`} className="h-11 min-w-0 flex-1 bg-background" value={useCustomModelId ? '' : modelId}
+          options={options} disabled={useCustomModelId || !apiKey.trim() || modelIds.length === 0} placeholder={modelIds.length ? '请选择 API 模型' : '先载入 API 模型'} onValueChange={onModelIdChange} />
+        <Button aria-label={`${kindLabel}载入模型列表`} variant="secondary" className="h-11 shrink-0 gap-2 px-3" disabled={useCustomModelId || !apiKey.trim() || loading} onClick={onLoad}>
+          <RefreshCw className={`size-4 ${loading ? 'motion-safe:animate-spin' : ''}`} />{loading ? '载入中' : '载入'}
+        </Button>
+      </div>
+      {error && <p role="alert" className="text-xs leading-relaxed text-destructive">{error}</p>}
+      {!error && modelIds.length > 0 && <p role="status" className="text-xs text-muted-foreground">已载入 {modelIds.length} 个模型</p>}
+    </div>
   );
 }
 
@@ -203,8 +296,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   const [initialRegistry] = useState(() => loadRegistry());
   const [imageModels, setImageModels] = useState<ImageModelConfig[]>(() => initialRegistry.imageModels.map(cloneImageModel));
   const [textModels, setTextModels] = useState<TextModelConfig[]>(() => initialRegistry.textModels.map(cloneTextModel));
-  const [providers, setProviders] = useState<ProviderConfig[]>(() => initialRegistry.providers || []);
-  const [selectedProviderId, setSelectedProviderId] = useState('');
+  const [providers, setProviders] = useState(() => initialRegistry.providers || []);
   const [savedDraft, setSavedDraft] = useState('');
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [defaultsDraft, setDefaults] = useState<DefaultModels>(() => normalizeDefaults(
@@ -214,13 +306,20 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   ));
   const [selectedImageModelId, setSelectedImageModelId] = useState('');
   const [selectedTextModelId, setSelectedTextModelId] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const toastIdRef = useRef(0);
   const [checkingModels, setCheckingModels] = useState(false);
+  const [savingAndCheckingModelId, setSavingAndCheckingModelId] = useState('');
+  const [modelConnectionResults, setModelConnectionResults] = useState<Record<string, { available: boolean; message: string }>>({});
   const [modelStatuses, setModelStatuses] = useState<ModelStatus[] | null>(null);
   const [modelCheckError, setModelCheckError] = useState<string | null>(null);
   const [showImageApiKey, setShowImageApiKey] = useState(false);
   const [showTextApiKey, setShowTextApiKey] = useState(false);
+  const modelEditorsRef = useRef<HTMLDivElement>(null);
+  const [loadedModelIds, setLoadedModelIds] = useState<Record<string, string[]>>({});
+  const [modelLoadErrors, setModelLoadErrors] = useState<Record<string, string>>({});
+  const [loadingModelListKey, setLoadingModelListKey] = useState('');
+  const modelListRequestRef = useRef<{ key: string; controller: AbortController } | null>(null);
 
   const [backupProgress, setBackupProgress] = useState<BackupProgressType>({ percent: 0, message: '' });
   const [isBackupActive, setIsBackupActive] = useState(false);
@@ -228,24 +327,36 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   const [backupSuccess, setBackupSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const showToast = (message: string, type: ToastData['type']) => {
+    setToast({ id: `settings-toast-${++toastIdRef.current}`, message, type });
+  };
+  const dismissToast = (id: string) => {
+    setToast(current => current?.id === id ? null : current);
+  };
+
   if (isOpen !== wasOpen) {
     setWasOpen(isOpen);
     if (isOpen) {
+      modelListRequestRef.current?.controller.abort();
+      modelListRequestRef.current = null;
       const registry = loadRegistry();
       setTab(initialTab);
       setImageModels(registry.imageModels.map(cloneImageModel));
       setTextModels(registry.textModels.map(cloneTextModel));
       setProviders(registry.providers || []);
-      setSelectedProviderId(registry.providers?.[0]?.id || '');
       setSavedDraft(JSON.stringify({ imageModels: registry.imageModels, textModels: registry.textModels, providers: registry.providers || [], defaults: normalizeDefaults(registry.defaults, registry.imageModels, registry.textModels) }));
       setConfirmDiscard(false);
       setDefaults(normalizeDefaults(registry.defaults, registry.imageModels, registry.textModels));
       setSelectedImageModelId(registry.imageModels[0]?.id || '');
       setSelectedTextModelId(registry.textModels[0]?.id || '');
-      setError(null);
-      setSuccess(null);
+      setToast(null);
       setModelStatuses(null);
       setModelCheckError(null);
+      setSavingAndCheckingModelId('');
+      setModelConnectionResults({});
+      setLoadedModelIds({});
+      setModelLoadErrors({});
+      setLoadingModelListKey('');
       setBackupError(null);
       setBackupSuccess(null);
     }
@@ -254,21 +365,111 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   const defaults = normalizeDefaults(defaultsDraft, imageModels, textModels);
 
   const draftSnapshot = JSON.stringify({ imageModels, textModels, providers, defaults });
+  const isDirty = savedDraft !== draftSnapshot;
   const mergedProviders = useMemo(() => reconcileModelProviders(providers, imageModels, textModels), [providers, imageModels, textModels]);
-  const handleProviderChange = (update: ProviderConfig[] | ((prev: ProviderConfig[]) => ProviderConfig[])) => {
-    const next = typeof update === 'function' ? update(mergedProviders) : update;
-    const derived = deriveImageAndTextModels(next);
-    setProviders(next);
-    setImageModels(derived.imageModels);
-    setTextModels(derived.textModels);
+  const modelListKey = (kind: 'image' | 'text', id: string) => `${kind}:${id}`;
+  const clearModelList = (kind: 'image' | 'text', id: string) => {
+    const key = modelListKey(kind, id);
+    if (modelListRequestRef.current?.key === key) {
+      modelListRequestRef.current.controller.abort();
+      modelListRequestRef.current = null;
+      setLoadingModelListKey('');
+    }
+    setLoadedModelIds(prev => { const next = { ...prev }; delete next[key]; return next; });
+    setModelLoadErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
+  };
+  const loadModelList = async (kind: 'image' | 'text', id: string, apiKey: string, protocol: ProviderProtocol | TextProviderProtocol) => {
+    const key = modelListKey(kind, id);
+    if (!apiKey.trim()) {
+      setModelLoadErrors(prev => ({ ...prev, [key]: '请先填写 API Key。' }));
+      return;
+    }
+    modelListRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    modelListRequestRef.current = { key, controller };
+    setLoadingModelListKey(key);
+    setModelLoadErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
+    try {
+      const ids = await fetchModelIds({ apiKey: apiKey.trim(), protocol: getModelListProtocol(protocol), signal: controller.signal });
+      if (controller.signal.aborted) return;
+      setLoadedModelIds(prev => ({ ...prev, [key]: ids }));
+      if (ids.length === 0) setModelLoadErrors(prev => ({ ...prev, [key]: '此 API Key 没有返回可选择的模型。' }));
+    } catch (cause) {
+      if (!controller.signal.aborted) {
+        setModelLoadErrors(prev => ({ ...prev, [key]: cause instanceof Error ? cause.message : '载入模型失败，请重试。' }));
+      }
+    } finally {
+      if (modelListRequestRef.current?.controller === controller) {
+        modelListRequestRef.current = null;
+        setLoadingModelListKey('');
+      }
+    }
   };
   const saveDraft = () => {
-    saveRegistry({ providers: mergedProviders, imageModels, textModels, defaults });
-    setSavedDraft(draftSnapshot);
-    syncDynamicModelExports();
-    onApiKeyChange?.(hasAnyApiKey());
-    setSuccess('配置已保存');
-    setError(null);
+    const incompleteImage = imageModels.find(model => !isCompleteImageModel(model));
+    const incompleteText = textModels.find(model => !isCompleteTextModel(model));
+    if (incompleteImage || incompleteText) {
+      showToast('请补全模型的配置备注、模型 ID 和 API Key 后再保存。', 'error');
+      if (incompleteImage) setSelectedImageModelId(incompleteImage.id);
+      if (incompleteText) setSelectedTextModelId(incompleteText.id);
+      requestAnimationFrame(() => modelEditorsRef.current?.scrollIntoView({ block: 'start' }));
+      return;
+    }
+    try {
+      saveRegistry({ providers: mergedProviders, imageModels, textModels, defaults });
+      setSavedDraft(draftSnapshot);
+      syncDynamicModelExports();
+      onApiKeyChange?.(hasAnyApiKey());
+      showToast('配置已保存', 'success');
+    } catch {
+      showToast('保存配置失败，请检查浏览器存储空间后重试。', 'error');
+    }
+  };
+
+  const handleSaveAndCheckModel = async (kind: 'image' | 'text', model: ImageModelConfig | TextModelConfig) => {
+    const complete = kind === 'image'
+      ? isCompleteImageModel(model as ImageModelConfig)
+      : isCompleteTextModel(model as TextModelConfig);
+    if (!complete) {
+      setModelConnectionResults(prev => ({
+        ...prev,
+        [model.id]: { available: false, message: '请先填写配置备注、API Key 和有效的模型 ID。' },
+      }));
+      return;
+    }
+
+    setSavingAndCheckingModelId(model.id);
+    setModelConnectionResults(prev => {
+      const next = { ...prev };
+      delete next[model.id];
+      return next;
+    });
+    try {
+      saveRegistry({ providers: mergedProviders, imageModels, textModels, defaults });
+      setSavedDraft(draftSnapshot);
+      syncDynamicModelExports();
+      onApiKeyChange?.(hasAnyApiKey());
+
+      const [status] = await checkModelsAvailability([model.id]);
+      const available = Boolean(status?.available);
+      const message = available
+        ? '连接成功，API Key 与模型 ID 均可用。'
+        : '当前模型配置连接失败，请检测api、模型id是否匹配';
+      setModelConnectionResults(prev => ({
+        ...prev,
+        [model.id]: { available, message },
+      }));
+      showToast(message, available ? 'success' : 'error');
+    } catch {
+      const message = '当前模型配置连接失败，请检测api、模型id是否匹配';
+      setModelConnectionResults(prev => ({
+        ...prev,
+        [model.id]: { available: false, message },
+      }));
+      showToast(message, 'error');
+    } finally {
+      setSavingAndCheckingModelId('');
+    }
   };
 
   const selectedImageModel = useMemo(
@@ -281,20 +482,32 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   );
 
   const handleAddImageModel = () => {
-    const draft = createImageModelDraft();
+    const draft = createImageModelDraft(nextConfigName('图片模型', imageModels), mergedProviders[0]?.apiKey);
     setImageModels((prev) => [...prev, draft]);
     setSelectedImageModelId(draft.id);
   };
 
   const handleUpdateImageModel = (id: string, patch: Partial<ImageModelConfig>) => {
+    setModelConnectionResults(prev => { const next = { ...prev }; delete next[id]; return next; });
+    const current = imageModels.find((model) => model.id === id);
+    const preset = patch.builtinPreset ? BUILTIN_IMAGE_PRESETS[patch.builtinPreset] : undefined;
+    const nextProtocol = preset?.protocol ?? patch.protocol;
+    if (current && ((patch.apiKey !== undefined && patch.apiKey !== current.apiKey)
+      || (nextProtocol !== undefined && nextProtocol !== current.protocol))) {
+      clearModelList('image', id);
+    }
     setImageModels((prev) => prev.map((model) => {
       if (model.id !== id) return model;
       const next = { ...model, ...patch };
       if (patch.builtinPreset) {
         const preset = BUILTIN_IMAGE_PRESETS[patch.builtinPreset];
         next.protocol = preset.protocol;
-        next.name = preset.name;
-        next.modelId = preset.modelId;
+        if (next.useCustomModelId !== false) {
+          next.modelId = preset.modelId;
+          next.customModelId = preset.modelId;
+        } else if (preset.protocol !== model.protocol) {
+          next.modelId = '';
+        }
         next.baseUrl = preset.baseUrl;
         next.maxRefImages = preset.maxRefImages;
         next.maxOutputSize = preset.maxOutputSize;
@@ -305,6 +518,12 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
       }
       return next;
     }));
+  };
+
+  const handleImageModelModeChange = (model: ImageModelConfig, useCustomModelId: boolean) => {
+    handleUpdateImageModel(model.id, useCustomModelId
+      ? { useCustomModelId: true, modelId: model.customModelId ?? model.modelId }
+      : { useCustomModelId: false, customModelId: model.useCustomModelId === false ? model.customModelId : model.modelId, modelId: '' });
   };
 
   const handleDeleteImageModel = (id: string) => {
@@ -321,25 +540,40 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
   };
 
   const handleAddTextModel = () => {
-    const draft = createTextModelDraft();
+    const draft = createTextModelDraft(nextConfigName('文本模型', textModels), mergedProviders[0]?.apiKey);
     setTextModels((prev) => [...prev, draft]);
     setSelectedTextModelId(draft.id);
   };
 
+  const handleUpdateTextModel = (id: string, patch: Partial<TextModelConfig>) => {
+    setModelConnectionResults(prev => { const next = { ...prev }; delete next[id]; return next; });
+    const current = textModels.find((model) => model.id === id);
+    if (current && ((patch.apiKey !== undefined && patch.apiKey !== current.apiKey)
+      || (patch.protocol !== undefined && patch.protocol !== current.protocol))) {
+      clearModelList('text', id);
+    }
+    setTextModels((prev) => prev.map((model) => (model.id === id ? { ...model, ...patch } : model)));
+  };
+
   const handleApplyTextTemplate = (id: string, templateId: BuiltinTextPresetId) => {
-    const template = getTextModelTemplate(templateId);
+    const model = textModels.find((item) => item.id === id);
+    const template = BUILTIN_TEXT_PRESETS[templateId];
+    if (!model || !template) return;
+    const protocolChanged = model.protocol !== template.protocol;
     handleUpdateTextModel(id, {
       protocol: template.protocol,
-      name: template.name,
-      modelId: template.modelId,
-      baseUrl: template.baseUrl,
-      note: template.note || getTextProviderDescription(template.protocol),
       builtinTemplate: template.id,
+      note: template.note,
+      ...(model.useCustomModelId === false
+        ? { modelId: protocolChanged ? '' : model.modelId }
+        : { modelId: template.modelId, customModelId: template.modelId }),
     });
   };
 
-  const handleUpdateTextModel = (id: string, patch: Partial<TextModelConfig>) => {
-    setTextModels((prev) => prev.map((model) => (model.id === id ? { ...model, ...patch } : model)));
+  const handleTextModelModeChange = (model: TextModelConfig, useCustomModelId: boolean) => {
+    handleUpdateTextModel(model.id, useCustomModelId
+      ? { useCustomModelId: true, modelId: model.customModelId ?? model.modelId }
+      : { useCustomModelId: false, customModelId: model.useCustomModelId === false ? model.customModelId : model.modelId, modelId: '' });
   };
 
   const handleDeleteTextModel = (id: string) => {
@@ -357,26 +591,6 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
     if (selectedTextModelId === id) {
       setSelectedTextModelId(nextModels[0]?.id || '');
     }
-  };
-
-  const persistSingleModel = (kind: 'image' | 'text', id: string) => {
-    const model = kind === 'image'
-      ? imageModels.find((item) => item.id === id)
-      : textModels.find((item) => item.id === id);
-    if (!model) return;
-    const complete = kind === 'image'
-      ? isCompleteImageModel(model as ImageModelConfig)
-      : isCompleteTextModel(model as TextModelConfig);
-    if (!complete) {
-      setError(`请先完成${kind === 'image' ? '图片' : '文本'}模型的名称、模型 ID 和 API Key`);
-      setSuccess(null);
-      return;
-    }
-    saveDraft();
-    setSuccess(`${model.name || '当前模型'} 已保存`);
-    setError(null);
-    setModelStatuses(null);
-    setModelCheckError(null);
   };
 
   const handleCheckModels = async () => {
@@ -483,17 +697,14 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
             <Settings className="w-5 h-5 text-muted-foreground" />
             <DialogTitle>设置</DialogTitle>
           </div>
-          <DialogDescription>按模型分别配置协议、URL 和 API Key。至少完成一个图片模型和一个文本模型后，外部功能才会解锁。</DialogDescription>
+          <DialogDescription>分别配置图片模型和文本推理模型，并设置常用默认模型。</DialogDescription>
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={value => setTab(value as SettingsTab)} className="min-h-0 min-w-0 flex-1 gap-0">
-          <TabsList className="min-h-11 w-full shrink-0 justify-start overflow-x-auto rounded-none border-b bg-transparent h-auto p-0 [&>[data-slot=tabs-trigger]]:flex-none sm:[&>[data-slot=tabs-trigger]]:flex-1">
+          <TabsList className="min-h-11 w-full shrink-0 justify-start overflow-x-auto overflow-y-hidden rounded-none border-b bg-transparent h-auto p-0 [&>[data-slot=tabs-trigger]]:flex-none sm:[&>[data-slot=tabs-trigger]]:flex-1">
             <TabsTrigger value="models" className="gap-2 rounded-none border-b-2 border-transparent data-active:border-primary data-active:bg-transparent data-active:shadow-none px-4 py-3">
               <ImageIcon className="w-4 h-4" />
               模型配置
-            </TabsTrigger>
-            <TabsTrigger value="providers" className="gap-2 rounded-none border-b-2 border-transparent data-active:border-primary data-active:bg-transparent px-4 py-3">
-              <Database className="w-4 h-4" />供应商
             </TabsTrigger>
             <TabsTrigger value="plugins" className="gap-2 rounded-none border-b-2 border-transparent data-active:border-primary data-active:bg-transparent data-active:shadow-none px-4 py-3">
               <Package className="w-4 h-4" />
@@ -509,269 +720,291 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="models" className="min-h-0 overflow-y-auto p-4 sm:p-6 mt-0 space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">模型级独立配置</p>
-                <p className="text-xs text-muted-foreground">每个模型单独记录协议、Base URL、API Key。外部只显示配置完整的模型。</p>
-              </div>
-            </div>
+          <TabsContent value="models" className="min-h-0 overflow-y-auto p-4 sm:p-6 mt-0 space-y-4">
 
-            {error && <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
-            {success && <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-400">{success}</div>}
+            <div ref={modelEditorsRef} className="min-w-0 scroll-mt-4 space-y-4">
+              <div className="min-w-0 space-y-4">
+                <div className="rounded-xl border border-border bg-card p-4 space-y-4 sm:p-5">
+                  <SettingsSectionHeading
+                    title="图片模型配置"
+                    description="管理用于生成和编辑图片的模型。"
+                    action={<Button variant="outline" className="min-h-11 gap-2" onClick={handleAddImageModel}>
+                      <Plus className="w-4 h-4" />
+                      新增图片模型
+                    </Button>}
+                  />
 
-            <div className="rounded-xl border p-4 space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium">图片模型</p>
-                  <p className="text-xs text-muted-foreground">无默认示范记录。请至少完成一个图片模型。</p>
-                </div>
-                <Button variant="outline" size="sm" className="gap-2" onClick={handleAddImageModel}>
-                  <Plus className="w-4 h-4" />
-                  新增图片模型
-                </Button>
-              </div>
-
-              <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
-                <div className="space-y-2">
-                  {imageModels.map((model) => (
-                    <button
-                      key={model.id}
-                      type="button"
-                      onClick={() => setSelectedImageModelId(model.id)}
-                      className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${selectedImageModelId === model.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
-                    >
-                      <div className="flex items-center gap-2 font-medium">
-                        <ImageProviderBadge protocol={model.protocol} />
-                        <span className="truncate">{model.name || '未命名模型'}</span>
-                      </div>
-                      <div className="text-xs text-muted-foreground">{isCompleteImageModel(model) ? '配置完成' : '待补全'}</div>
-                    </button>
-                  ))}
-                </div>
-
-                {selectedImageModel && (
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className={`grid min-w-0 gap-4 ${imageModels.length ? 'xl:grid-cols-[220px_minmax(0,1fr)]' : ''}`}>
                     <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">内置模板</label>
-                      <Select
-                        value={selectedImageModel.builtinPreset}
-                        onValueChange={(value) => handleUpdateImageModel(selectedImageModel.id, { builtinPreset: value as ImageModelConfig['builtinPreset'] })}
-                        options={builtinImagePresetOptions}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">协议</label>
-                      <Select
-                        value={selectedImageModel.protocol}
-                        onValueChange={(value) => handleUpdateImageModel(selectedImageModel.id, { protocol: value as ProviderProtocol })}
-                        options={[
-                          { value: 'google', label: 'Google' },
-                          { value: 'openai', label: 'OpenAI Images' },
-                          { value: 'grok', label: 'Grok Images' },
-                        ]}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">显示名称</label>
-                      <Input value={selectedImageModel.name} onChange={(event) => handleUpdateImageModel(selectedImageModel.id, { name: event.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">模型 ID</label>
-                      <Input value={selectedImageModel.modelId} onChange={(event) => handleUpdateImageModel(selectedImageModel.id, { modelId: event.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">Base URL</label>
-                      <Input value={selectedImageModel.baseUrl} readOnly aria-readonly="true" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">API Key</label>
-                      <div className="relative">
-                        <Input
-                          type={showImageApiKey ? "text" : "password"}
-                          value={selectedImageModel.apiKey}
-                          onChange={(event) => handleUpdateImageModel(selectedImageModel.id, { apiKey: event.target.value })}
-                          className="pr-8"
-                        />
+                      {imageModels.map((model) => (
                         <button
+                          key={model.id}
                           type="button"
-                          onClick={() => setShowImageApiKey(!showImageApiKey)}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                          tabIndex={-1}
+                          onClick={() => setSelectedImageModelId(model.id)}
+                          className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${selectedImageModelId === model.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
                         >
-                          {showImageApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          <div className="flex min-w-0 items-center gap-2 font-medium">
+                            <ImageProviderBadge protocol={model.protocol} />
+                            <span className="truncate">{model.name || '未命名模型'}</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">{isCompleteImageModel(model) ? '配置完成' : '待补全'}</div>
                         </button>
-                      </div>
+                      ))}
+                      {imageModels.length === 0 && <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">尚未添加图片模型。</p>}
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">最大参考图数量</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={selectedImageModel.maxRefImages}
-                        onChange={(event) => {
-                          const next = Number(event.target.value);
-                          handleUpdateImageModel(selectedImageModel.id, {
-                            maxRefImages: Number.isFinite(next) && next >= 0 ? Math.floor(next) : 0,
-                          });
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">最大分辨率</label>
-                      <Select
-                        value={selectedImageModel.maxOutputSize}
-                        onValueChange={(value) => handleUpdateImageModel(selectedImageModel.id, { maxOutputSize: value as ImageModelConfig['maxOutputSize'] })}
-                        options={selectedImageOutputSizes.map((size) => ({ value: size, label: size === '512' ? '0.5K' : size }))}
-                      />
-                    </div>
-                    {selectedImageModel.protocol === 'openai' && (
-                      <div className="flex items-center justify-between rounded-lg border px-3 py-2 md:col-span-2">
-                        <div>
-                          <p className="text-sm font-medium">Image 2 额外参数</p>
-                          <p className="text-xs text-muted-foreground">透明度、质量、风格控件默认开启，用户可手动关闭。</p>
+
+                    {selectedImageModel && (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground">配置备注</label>
+                          <Input aria-label="图片模型配置备注" value={selectedImageModel.name} onChange={(event) => handleUpdateImageModel(selectedImageModel.id, { name: event.target.value })} />
                         </div>
-                        <Switch
-                          checked={selectedImageModel.supportsAdvancedParams}
-                          onCheckedChange={(checked) => handleUpdateImageModel(selectedImageModel.id, { supportsAdvancedParams: checked })}
-                        />
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground">协议</label>
+                          <Select
+                            ariaLabel="图片模型协议" value={selectedImageModel.protocol}
+                            onValueChange={(value) => handleUpdateImageModel(selectedImageModel.id, { protocol: value as ProviderProtocol })}
+                            options={[
+                              { value: 'google', label: 'Google' },
+                              { value: 'openai', label: 'OpenAI Images' },
+                              { value: 'grok', label: 'Grok Images' },
+                          { value: 'doubao', label: '豆包 Images' },
+                          { value: 'alibaba-dashscope', label: '阿里百炼 Images' },
+                            ]}
+                          />
+                        </div>
+                        <ModelIdLoadField kindLabel="图片模型" modelId={selectedImageModel.modelId} modelIds={loadedModelIds[modelListKey('image', selectedImageModel.id)] || []}
+                          apiKey={selectedImageModel.apiKey} useCustomModelId={selectedImageModel.useCustomModelId !== false}
+                          loading={loadingModelListKey === modelListKey('image', selectedImageModel.id)} error={modelLoadErrors[modelListKey('image', selectedImageModel.id)]}
+                          onModeChange={(enabled) => handleImageModelModeChange(selectedImageModel, enabled)}
+                          onModelIdChange={(modelId) => handleUpdateImageModel(selectedImageModel.id, { modelId })}
+                          onLoad={() => loadModelList('image', selectedImageModel.id, selectedImageModel.apiKey, selectedImageModel.protocol)} />
+                        <ModelIdModeField kindLabel="图片模型" modelId={selectedImageModel.modelId} customModelId={selectedImageModel.customModelId ?? selectedImageModel.modelId}
+                          useCustomModelId={selectedImageModel.useCustomModelId !== false} onModeChange={(enabled) => handleImageModelModeChange(selectedImageModel, enabled)}
+                          onCustomModelIdChange={(modelId) => handleUpdateImageModel(selectedImageModel.id, { modelId, customModelId: modelId })} />
+                        <div className="space-y-2">
+                          <label className="flex h-5 items-center text-sm font-medium leading-5 text-foreground">Base URL</label>
+                          <Input aria-label="图片模型 API 地址" value={selectedImageModel.baseUrl} readOnly aria-readonly="true" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="flex h-5 items-baseline gap-x-2 text-sm font-medium leading-5 text-foreground">
+                            <span>API Key</span><span className="text-xs font-normal leading-4 text-muted-foreground">网站里创建的 API</span>
+                          </label>
+                          <div className="relative">
+                            <Input
+                              type={showImageApiKey ? "text" : "password"}
+                              aria-label="图片模型独立 API Key" value={selectedImageModel.apiKey}
+                              onChange={(event) => handleUpdateImageModel(selectedImageModel.id, { apiKey: event.target.value })}
+                              className="pr-8"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowImageApiKey(!showImageApiKey)}
+                              className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                              tabIndex={-1}
+                            >
+                              {showImageApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground">最大参考图数量</label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={selectedImageModel.maxRefImages}
+                            onChange={(event) => {
+                              const next = Number(event.target.value);
+                              handleUpdateImageModel(selectedImageModel.id, {
+                                maxRefImages: Number.isFinite(next) && next >= 0 ? Math.floor(next) : 0,
+                              });
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground">最大分辨率</label>
+                          <Select
+                            value={selectedImageModel.maxOutputSize}
+                            onValueChange={(value) => handleUpdateImageModel(selectedImageModel.id, { maxOutputSize: value as ImageModelConfig['maxOutputSize'] })}
+                            options={selectedImageOutputSizes.map((size) => ({ value: size, label: size === '512' ? '0.5K' : size }))}
+                          />
+                        </div>
+                        {selectedImageModel.protocol === 'openai' && (
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex h-5 items-center">
+                              <p className="text-sm font-medium leading-5 text-foreground">Image 2 额外参数</p>
+                            </div>
+                            <div className="flex h-11 items-center justify-between gap-3 rounded-lg border border-input px-3">
+                              <p className="text-sm leading-5 text-muted-foreground">透明度、质量、风格控件</p>
+                              <Switch aria-label="Image 2 额外参数" checked={selectedImageModel.supportsAdvancedParams}
+                                onCheckedChange={(checked) => handleUpdateImageModel(selectedImageModel.id, { supportsAdvancedParams: checked })} />
+                            </div>
+                          </div>
+                        )}
+                        <div className="min-w-0 space-y-2">
+                          <label className="flex h-5 items-center text-sm font-medium leading-5 text-foreground">内置模板</label>
+                          <Select className="h-11" ariaLabel="图片模型内置模板" value={selectedImageModel.builtinPreset}
+                            onValueChange={(value) => handleUpdateImageModel(selectedImageModel.id, { builtinPreset: value as ImageModelConfig['builtinPreset'] })}
+                            options={builtinImagePresetOptions} />
+                        </div>
+                        <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-2">
+                          {modelConnectionResults[selectedImageModel.id] ? (
+                            <p role="status" className={`flex min-w-0 items-center gap-2 text-sm ${modelConnectionResults[selectedImageModel.id].available ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                              {modelConnectionResults[selectedImageModel.id].available ? <CheckCircle2 className="size-4 shrink-0" /> : <XCircle className="size-4 shrink-0" />}
+                              <span>{modelConnectionResults[selectedImageModel.id].message}</span>
+                            </p>
+                          ) : <span />}
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Button variant="outline" size="sm" className="gap-2" disabled={Boolean(savingAndCheckingModelId)}
+                              onClick={() => handleSaveAndCheckModel('image', selectedImageModel)}>
+                              <RefreshCw className={`size-4 ${savingAndCheckingModelId === selectedImageModel.id ? 'motion-safe:animate-spin' : ''}`} />
+                              {savingAndCheckingModelId === selectedImageModel.id ? '检查中...' : '保存并检查'}
+                            </Button>
+                          <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" onClick={() => handleDeleteImageModel(selectedImageModel.id)}>
+                            <Trash2 className="w-4 h-4" />
+                            删除模型
+                          </Button>
+                          </div>
+                        </div>
                       </div>
                     )}
-                    <div className="md:col-span-2 flex justify-end gap-2">
-                      <Button size="sm" className="gap-2" onClick={() => persistSingleModel('image', selectedImageModel.id)}>
-                        <Save className="w-4 h-4" />
-                        保存模型
-                      </Button>
-                      <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" onClick={() => handleDeleteImageModel(selectedImageModel.id)}>
-                        <Trash2 className="w-4 h-4" />
-                        删除模型
-                      </Button>
-                    </div>
                   </div>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-xl border p-4 space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium">文本模型</p>
-                  <p className="text-xs text-muted-foreground">无默认示范记录。请至少完成一个文本模型。</p>
-                </div>
-                <Button variant="outline" size="sm" className="gap-2" onClick={handleAddTextModel}>
-                  <Plus className="w-4 h-4" />
-                  新增文本模型
-                </Button>
-              </div>
-
-              <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
-                <div className="space-y-2">
-                  {textModels.map((model) => (
-                    <button
-                      key={model.id}
-                      type="button"
-                      onClick={() => setSelectedTextModelId(model.id)}
-                      className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${selectedTextModelId === model.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
-                    >
-                      <div className="flex items-center gap-2 font-medium">
-                        {model.builtinTemplate && BUILTIN_TEXT_PRESETS[model.builtinTemplate] && <TextProviderBadge provider={BUILTIN_TEXT_PRESETS[model.builtinTemplate].provider} />}
-                        <span className="truncate">{model.name || '未命名模型'}</span>
-                      </div>
-                      <div className="text-xs text-muted-foreground">{isCompleteTextModel(model) ? '配置完成' : '待补全'}</div>
-                    </button>
-                  ))}
                 </div>
 
-                {selectedTextModel && (
-                  <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-border bg-card p-4 space-y-4 sm:p-5">
+                  <SettingsSectionHeading
+                    title="文本推理模型配置"
+                    description="管理用于 Agent 对话、提示词和图片理解的模型。"
+                    action={<Button variant="outline" className="min-h-11 gap-2" onClick={handleAddTextModel}>
+                      <Plus className="w-4 h-4" />
+                      新增文本推理模型
+                    </Button>}
+                  />
+
+                  <div className={`grid min-w-0 gap-4 ${textModels.length ? 'xl:grid-cols-[220px_minmax(0,1fr)]' : ''}`}>
                     <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">内置模板</label>
-                      <Select
-                        value={selectedTextModel.builtinTemplate || ''}
-                        onValueChange={(value) => handleApplyTextTemplate(selectedTextModel.id, value as BuiltinTextPresetId)}
-                        options={BUILTIN_TEXT_PRESET_OPTIONS.map((option) => {
-                          const preset = BUILTIN_TEXT_PRESETS[option.value];
-                          return {
-                            ...option,
-                            label: <span className="flex min-w-0 items-center gap-2"><TextProviderBadge provider={preset.provider} /><span className="truncate">{preset.name}</span></span>,
-                          };
-                        })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">协议</label>
-                      <Select
-                        value={selectedTextModel.protocol}
-                        onValueChange={(value) => {
-                          const protocol = value as TextProviderProtocol;
-                          handleUpdateTextModel(selectedTextModel.id, { protocol });
-                          const template = getDefaultTextModelTemplate(protocol);
-                          if (template) handleApplyTextTemplate(selectedTextModel.id, template.id);
-                        }}
-                        options={[
-                          { value: 'openai-responses', label: getTextProviderLabel('openai-responses') },
-                          { value: 'openai-chat-completions', label: getTextProviderLabel('openai-chat-completions') },
-                          { value: 'anthropic-messages', label: getTextProviderLabel('anthropic-messages') },
-                          { value: 'google-gemini', label: getTextProviderLabel('google-gemini') },
-                        ]}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">显示名称</label>
-                      <Input value={selectedTextModel.name} onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { name: event.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">模型 ID</label>
-                      <Input value={selectedTextModel.modelId} onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { modelId: event.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">Base URL</label>
-                      <Input value={selectedTextModel.baseUrl} readOnly aria-readonly="true" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">API Key</label>
-                      <div className="relative">
-                        <Input
-                          type={showTextApiKey ? "text" : "password"}
-                          value={selectedTextModel.apiKey}
-                          onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { apiKey: event.target.value })}
-                          className="pr-8"
-                        />
+                      {textModels.map((model) => (
                         <button
+                          key={model.id}
                           type="button"
-                          onClick={() => setShowTextApiKey(!showTextApiKey)}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                          tabIndex={-1}
+                          onClick={() => setSelectedTextModelId(model.id)}
+                          className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${selectedTextModelId === model.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
                         >
-                          {showTextApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          <div className="flex min-w-0 items-center gap-2 font-medium">
+                            <TextProviderBadge provider={model.builtinTemplate && BUILTIN_TEXT_PRESETS[model.builtinTemplate]
+                              ? BUILTIN_TEXT_PRESETS[model.builtinTemplate].provider : textProviderForProtocol(model.protocol)} />
+                            <span className="truncate">{model.name || '未命名模型'}</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">{isCompleteTextModel(model) ? '配置完成' : '待补全'}</div>
                         </button>
+                      ))}
+                      {textModels.length === 0 && <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">尚未添加文本推理模型。</p>}
+                    </div>
+
+                    {selectedTextModel && (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground">配置备注</label>
+                          <Input aria-label="文本模型配置备注" value={selectedTextModel.name} onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { name: event.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground">协议</label>
+                          <Select
+                            ariaLabel="文本模型协议" value={selectedTextModel.protocol}
+                            onValueChange={(value) => {
+                              const protocol = value as TextProviderProtocol;
+                              const template = getDefaultTextModelTemplate(protocol);
+                              if (template) handleApplyTextTemplate(selectedTextModel.id, template.id);
+                              else handleUpdateTextModel(selectedTextModel.id, { protocol });
+                            }}
+                            options={[
+                              { value: 'openai-responses', label: getTextProviderLabel('openai-responses') },
+                              { value: 'openai-chat-completions', label: getTextProviderLabel('openai-chat-completions') },
+                              { value: 'anthropic-messages', label: getTextProviderLabel('anthropic-messages') },
+                              { value: 'google-gemini', label: getTextProviderLabel('google-gemini') },
+                            ]}
+                          />
+                        </div>
+                        <ModelIdLoadField kindLabel="文本模型" modelId={selectedTextModel.modelId} modelIds={loadedModelIds[modelListKey('text', selectedTextModel.id)] || []}
+                          apiKey={selectedTextModel.apiKey} useCustomModelId={selectedTextModel.useCustomModelId !== false}
+                          loading={loadingModelListKey === modelListKey('text', selectedTextModel.id)} error={modelLoadErrors[modelListKey('text', selectedTextModel.id)]}
+                          onModeChange={(enabled) => handleTextModelModeChange(selectedTextModel, enabled)}
+                          onModelIdChange={(modelId) => handleUpdateTextModel(selectedTextModel.id, { modelId })}
+                          onLoad={() => loadModelList('text', selectedTextModel.id, selectedTextModel.apiKey, selectedTextModel.protocol)} />
+                        <ModelIdModeField kindLabel="文本模型" modelId={selectedTextModel.modelId} customModelId={selectedTextModel.customModelId ?? selectedTextModel.modelId}
+                          useCustomModelId={selectedTextModel.useCustomModelId !== false} onModeChange={(enabled) => handleTextModelModeChange(selectedTextModel, enabled)}
+                          onCustomModelIdChange={(modelId) => handleUpdateTextModel(selectedTextModel.id, { modelId, customModelId: modelId })} />
+                        <div className="space-y-2">
+                          <label className="flex h-5 items-center text-sm font-medium leading-5 text-foreground">Base URL</label>
+                          <Input aria-label="文本模型 API 地址" value={selectedTextModel.baseUrl} readOnly aria-readonly="true" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="flex h-5 items-baseline gap-x-2 text-sm font-medium leading-5 text-foreground">
+                            <span>API Key</span><span className="text-xs font-normal leading-4 text-muted-foreground">网站里创建的 API</span>
+                          </label>
+                          <div className="relative">
+                            <Input
+                              type={showTextApiKey ? "text" : "password"}
+                              aria-label="文本模型独立 API Key" value={selectedTextModel.apiKey}
+                              onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { apiKey: event.target.value })}
+                              className="pr-8"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowTextApiKey(!showTextApiKey)}
+                              className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                              tabIndex={-1}
+                            >
+                              {showTextApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="min-w-0 space-y-2">
+                          <label className="text-sm font-medium text-foreground">协议描述</label>
+                          <Input value={selectedTextModel.note || ''} onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { note: event.target.value })} />
+                        </div>
+                        <div className="min-w-0 space-y-2">
+                          <label className="text-sm font-medium text-foreground">内置模板</label>
+                          <Select ariaLabel="文本模型内置模板" value={selectedTextModel.builtinTemplate || ''}
+                            onValueChange={(value) => handleApplyTextTemplate(selectedTextModel.id, value as BuiltinTextPresetId)}
+                            options={BUILTIN_TEXT_PRESET_OPTIONS.map((option) => {
+                              const preset = BUILTIN_TEXT_PRESETS[option.value];
+                              return { ...option, label: <span className="flex min-w-0 items-center gap-2"><TextProviderBadge provider={preset.provider} /><span className="truncate">{preset.name}</span></span> };
+                            })} />
+                        </div>
+                        <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-2">
+                          {modelConnectionResults[selectedTextModel.id] ? (
+                            <p role="status" className={`flex min-w-0 items-center gap-2 text-sm ${modelConnectionResults[selectedTextModel.id].available ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                              {modelConnectionResults[selectedTextModel.id].available ? <CheckCircle2 className="size-4 shrink-0" /> : <XCircle className="size-4 shrink-0" />}
+                              <span>{modelConnectionResults[selectedTextModel.id].message}</span>
+                            </p>
+                          ) : <span />}
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Button variant="outline" size="sm" className="gap-2" disabled={Boolean(savingAndCheckingModelId)}
+                              onClick={() => handleSaveAndCheckModel('text', selectedTextModel)}>
+                              <RefreshCw className={`size-4 ${savingAndCheckingModelId === selectedTextModel.id ? 'motion-safe:animate-spin' : ''}`} />
+                              {savingAndCheckingModelId === selectedTextModel.id ? '检查中...' : '保存并检查'}
+                            </Button>
+                          <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" onClick={() => handleDeleteTextModel(selectedTextModel.id)}>
+                            <Trash2 className="w-4 h-4" />
+                            删除模型
+                          </Button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-xs text-muted-foreground">协议描述</label>
-                      <Input value={selectedTextModel.note || ''} onChange={(event) => handleUpdateTextModel(selectedTextModel.id, { note: event.target.value })} />
-                    </div>
-                    <div className="md:col-span-2 flex justify-end gap-2">
-                      <Button size="sm" className="gap-2" onClick={() => persistSingleModel('text', selectedTextModel.id)}>
-                        <Save className="w-4 h-4" />
-                        保存模型
-                      </Button>
-                      <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" onClick={() => handleDeleteTextModel(selectedTextModel.id)}>
-                        <Trash2 className="w-4 h-4" />
-                        删除模型
-                      </Button>
-                    </div>
+                    )}
                   </div>
-                )}
+                </div>
+
               </div>
             </div>
 
-            <div className="rounded-xl border p-4 space-y-4">
+            <CommonModelSettings defaults={defaults} imageOptions={completeImageOptions} textOptions={completeTextOptions}
+              sliceCapableIds={sliceCapableImageOptions.map(option => option.value)} onChange={setDefaults} />
+
+            <WorkflowModelSettings>
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium">默认模型</p>
-                  <p className="text-xs text-muted-foreground">这里只会显示已经配置完整的模型。</p>
-                </div>
+                <h4 className="text-base font-semibold text-foreground">各功能的默认模型</h4>
                 <Button variant="outline" size="sm" className="gap-2" onClick={handleCheckModels} disabled={checkingModels}>
                   <RefreshCw className={`w-4 h-4 ${checkingModels ? 'animate-spin' : ''}`} />
                   {checkingModels ? '检查中...' : '检查模型'}
@@ -780,43 +1013,43 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">文生图默认模型</label>
-                  <Select value={defaults.textToImage} onValueChange={(value) => setDefaults((prev) => ({ ...prev, textToImage: value }))} options={completeImageOptions} />
+                  <label className="text-sm font-medium text-foreground">文生图默认模型</label>
+                  <Select className="min-h-11" ariaLabel="文生图默认模型" value={defaults.textToImage} onValueChange={(value) => setDefaults((prev) => ({ ...prev, textToImage: value }))} options={completeImageOptions} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">图生图默认模型</label>
-                  <Select value={defaults.imageToImage} onValueChange={(value) => setDefaults((prev) => ({ ...prev, imageToImage: value }))} options={completeImageOptions} />
+                  <label className="text-sm font-medium text-foreground">图生图默认模型</label>
+                  <Select className="min-h-11" ariaLabel="图生图默认模型" value={defaults.imageToImage} onValueChange={(value) => setDefaults((prev) => ({ ...prev, imageToImage: value }))} options={completeImageOptions} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">反推提示词默认模型</label>
-                  <Select value={defaults.reversePrompt} onValueChange={(value) => setDefaults((prev) => ({ ...prev, reversePrompt: value }))} options={completeTextOptions} />
+                  <label className="text-sm font-medium text-foreground">反推提示词默认模型</label>
+                  <Select className="min-h-11" ariaLabel="反推提示词默认模型" value={defaults.reversePrompt} onValueChange={(value) => setDefaults((prev) => ({ ...prev, reversePrompt: value }))} options={completeTextOptions} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">Agent 默认模型</label>
-                  <Select value={defaults.agent} onValueChange={(value) => setDefaults((prev) => ({ ...prev, agent: value }))} options={completeTextOptions} />
+                  <label className="text-sm font-medium text-foreground">Agent 默认模型</label>
+                  <Select className="min-h-11" ariaLabel="Agent 默认模型" value={defaults.agent} onValueChange={(value) => setDefaults((prev) => ({ ...prev, agent: value }))} options={completeTextOptions} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">提示词优化默认模型</label>
-                  <Select value={defaults.promptOptimize} onValueChange={(value) => setDefaults((prev) => ({ ...prev, promptOptimize: value }))} options={completeTextOptions} />
+                  <label className="text-sm font-medium text-foreground">提示词优化默认模型</label>
+                  <Select className="min-h-11" ariaLabel="提示词优化默认模型" value={defaults.promptOptimize} onValueChange={(value) => setDefaults((prev) => ({ ...prev, promptOptimize: value }))} options={completeTextOptions} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">图片描述默认模型</label>
-                  <Select value={defaults.imageDescribe} onValueChange={(value) => setDefaults((prev) => ({ ...prev, imageDescribe: value }))} options={completeTextOptions} />
+                  <label className="text-sm font-medium text-foreground">图片描述默认模型</label>
+                  <Select className="min-h-11" ariaLabel="图片描述默认模型" value={defaults.imageDescribe} onValueChange={(value) => setDefaults((prev) => ({ ...prev, imageDescribe: value }))} options={completeTextOptions} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">AI 拆图默认模型</label>
-                  <Select value={defaults.sliceDecomposition} onValueChange={(value) => setDefaults((prev) => ({ ...prev, sliceDecomposition: value }))} options={completeTextOptions} />
-                  <p className="text-[11px] text-muted-foreground">UI设计模式：识别切片与背景候选，需要视觉能力</p>
+                  <label className="text-sm font-medium text-foreground">AI 拆图默认模型</label>
+                  <Select className="min-h-11" ariaLabel="AI 拆图默认模型" value={defaults.sliceDecomposition} onValueChange={(value) => setDefaults((prev) => ({ ...prev, sliceDecomposition: value }))} options={completeTextOptions} />
+                  <p className="text-sm leading-6 text-muted-foreground">UI设计模式：识别切片与背景候选，需要视觉能力</p>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">网页复刻默认模型</label>
-                  <Select value={defaults.sliceReconstruct} onValueChange={(value) => setDefaults((prev) => ({ ...prev, sliceReconstruct: value }))} options={completeTextOptions} />
-                  <p className="text-[11px] text-muted-foreground">UI设计模式：多轮工具调用生成网页，建议用能力更强的模型</p>
+                  <label className="text-sm font-medium text-foreground">网页复刻默认模型</label>
+                  <Select className="min-h-11" ariaLabel="网页复刻默认模型" value={defaults.sliceReconstruct} onValueChange={(value) => setDefaults((prev) => ({ ...prev, sliceReconstruct: value }))} options={completeTextOptions} />
+                  <p className="text-sm leading-6 text-muted-foreground">UI设计模式：多轮工具调用生成网页，建议用能力更强的模型</p>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">切图图片编辑默认模型</label>
-                  <Select value={defaults.sliceImageEdit} onValueChange={(value) => setDefaults((prev) => ({ ...prev, sliceImageEdit: value }))} options={sliceCapableImageOptions} />
-                  <p className="text-[11px] text-muted-foreground">
+                  <label className="text-sm font-medium text-foreground">切图图片编辑默认模型</label>
+                  <Select className="min-h-11" ariaLabel="切图图片编辑默认模型" value={defaults.sliceImageEdit} onValueChange={(value) => setDefaults((prev) => ({ ...prev, sliceImageEdit: value }))} options={sliceCapableImageOptions} />
+                  <p className="text-sm leading-6 text-muted-foreground">
                     {sliceCapableImageOptions.length === 0
                       ? '需要一个 OpenAI 协议的图片模型；Gemini / Grok 不支持带蒙版的局部编辑'
                       : 'AI 透明化与背景补齐使用，仅支持 OpenAI 协议'}
@@ -838,12 +1071,9 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                   ))}
                 </div>
               )}
-            </div>
+            </WorkflowModelSettings>
           </TabsContent>
 
-          <TabsContent value="providers" className="min-h-0 overflow-y-auto p-4 sm:p-6 mt-0">
-            <ProviderSettingsPanel providers={mergedProviders} selectedProviderId={selectedProviderId} onSelect={setSelectedProviderId} onChange={handleProviderChange} />
-          </TabsContent>
           <TabsContent value="plugins" className="min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6 mt-0">
             <PluginsSettings />
           </TabsContent>
@@ -851,8 +1081,7 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
           <TabsContent value="backup" className="min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6 mt-0">
             <div className="space-y-4">
               <div className="space-y-2">
-                <h3 className="text-base font-medium">数据备份与恢复</h3>
-                <p className="text-sm text-muted-foreground">导出所有数据（模型配置、任务历史、设置、图片）为 ZIP 压缩包，或从备份文件恢复数据。</p>
+                <SettingsSectionHeading title="数据备份与恢复" description="导出所有数据（模型配置、任务历史、设置、图片）为 ZIP 压缩包，或从备份文件恢复数据。" />
               </div>
 
               <BackupProgress percent={backupProgress.percent} message={backupProgress.message} isActive={isBackupActive} />
@@ -871,12 +1100,12 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                 </div>
               )}
 
-              <div className="space-y-3 rounded-lg border p-4">
+              <div className="space-y-3 rounded-xl border border-border bg-card p-4 sm:p-5">
                 <div className="flex items-start gap-3">
                   <Download className="w-5 h-5 text-muted-foreground mt-0.5" />
                   <div className="flex-1 space-y-2">
-                    <h4 className="font-medium">导出数据</h4>
-                    <p className="text-sm text-muted-foreground">将所有数据打包为 ZIP 文件下载到本地。备份文件包含模型配置和本地记录，请自行保管。</p>
+                    <h4 className="text-base font-semibold text-foreground">导出数据</h4>
+                    <p className="text-sm leading-6 text-muted-foreground">将所有数据打包为 ZIP 文件下载到本地。备份文件包含模型配置和本地记录，请自行保管。</p>
                     <Button onClick={() => handleExport(false)} disabled={isBackupActive} className="gap-2">
                       <Download className="w-4 h-4" />
                       全量备份
@@ -886,12 +1115,12 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
                 </div>
               </div>
 
-              <div className="space-y-3 rounded-lg border p-4">
+              <div className="space-y-3 rounded-xl border border-border bg-card p-4 sm:p-5">
                 <div className="flex items-start gap-3">
                   <Upload className="w-5 h-5 text-muted-foreground mt-0.5" />
                   <div className="flex-1 space-y-2">
-                    <h4 className="font-medium">导入数据</h4>
-                    <p className="text-sm text-muted-foreground">从备份文件恢复数据。<span className="font-medium text-destructive">警告：这会覆盖现有数据。</span></p>
+                    <h4 className="text-base font-semibold text-foreground">导入数据</h4>
+                    <p className="text-sm leading-6 text-muted-foreground">从备份文件恢复数据。<span className="font-semibold text-destructive">警告：这会覆盖现有数据。</span></p>
                     <input ref={fileInputRef} type="file" accept=".zip" onChange={handleFileSelect} className="hidden" />
                     <Button onClick={() => fileInputRef.current?.click()} disabled={isBackupActive} variant="outline" className="gap-2">
                       <Upload className="w-4 h-4" />
@@ -905,24 +1134,24 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
 
           <TabsContent value="about" className="min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4 mt-0">
             <div className="space-y-4 text-sm">
-              <details className="group rounded-lg bg-muted/50 p-3">
-                <summary className="flex cursor-pointer select-none items-center gap-2 font-medium">
-                  <span className="text-[10px] opacity-60 transition-transform group-open:rotate-90">▶</span>
+              <details className="group rounded-xl border border-border bg-card p-4 sm:p-5">
+                <summary className="flex min-h-8 cursor-pointer select-none items-center gap-3 text-base font-semibold text-foreground">
+                  <span className="text-xs text-muted-foreground transition-transform group-open:rotate-90">▶</span>
                   使用方法
                 </summary>
-                <ol className="mt-3 list-decimal list-inside space-y-2 text-muted-foreground">
+                <ol className="mt-3 list-decimal list-inside space-y-2 text-sm leading-6 text-muted-foreground">
                   <li>先完成至少一个图片模型和一个文本模型的全部信息。（中转站创建2个API，一个用于GPT推理，一个是生图专用的API）</li>
                   <li>保存后，外部工作区只会显示这些配置完整的模型。</li>
                   <li>再为各工作流指定默认模型，即可开始生图、反推或 Agent 工作流。</li>
                 </ol>
               </details>
 
-              <details className="group rounded-lg bg-muted/50 p-3">
-                <summary className="flex cursor-pointer select-none items-center gap-2 font-medium">
-                  <span className="text-[10px] opacity-60 transition-transform group-open:rotate-90">▶</span>
+              <details className="group rounded-xl border border-border bg-card p-4 sm:p-5">
+                <summary className="flex min-h-8 cursor-pointer select-none items-center gap-3 text-base font-semibold text-foreground">
+                  <span className="text-xs text-muted-foreground transition-transform group-open:rotate-90">▶</span>
                   隐私条款
                 </summary>
-                <ul className="mt-3 list-disc list-inside space-y-2 text-muted-foreground">
+                <ul className="mt-3 list-disc list-inside space-y-2 text-sm leading-6 text-muted-foreground">
                   <li>本站为本地优先应用：模型配置、任务历史、设置与生成图片默认保存在你的浏览器本地。</li>
                   <li>每个模型的 API Key 和 Base URL 仅用于调用你自己配置的上游服务。</li>
                   <li>生图、反推、Agent、提示词优化等功能会把你当前选择的提示词、参考图或对话内容发送到对应模型配置的上游接口。</li>
@@ -935,9 +1164,10 @@ export function SettingsModal({ isOpen, onClose, onApiKeyChange, initialTab = 'm
           </TabsContent>
         </Tabs>
         <div className="flex shrink-0 items-center justify-between gap-3 border-t p-3">
-          <p className="min-w-0 flex-1 break-words text-xs text-muted-foreground">{error || success || (savedDraft !== draftSnapshot ? '有未保存的配置' : '配置已保存')}</p>
-          <Button onClick={saveDraft} disabled={isBackupActive} className="shrink-0 gap-2"><Save className="w-4 h-4" />保存配置</Button>
+          <p role="status" className="min-w-0 flex-1 break-words text-sm leading-5 text-muted-foreground">{isDirty ? '有未保存的配置' : (completeImageOptions.length || completeTextOptions.length ? '配置已保存' : '添加模型后点击保存，即可开始使用')}</p>
+          <Button onClick={saveDraft} disabled={isBackupActive} className="min-h-11 shrink-0 gap-2"><Save className="w-4 h-4" />保存配置</Button>
         </div>
+        {toast && <Toast toast={toast} onDismiss={dismissToast} />}
         <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
           <DialogContent><DialogHeader><DialogTitle>丢弃未保存的配置？</DialogTitle><DialogDescription>关闭后将保留上次保存的配置。</DialogDescription></DialogHeader>
             <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setConfirmDiscard(false)}>继续编辑</Button><Button variant="destructive" onClick={() => { setConfirmDiscard(false); onClose(); }}>丢弃更改</Button></div>

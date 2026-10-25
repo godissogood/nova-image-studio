@@ -441,7 +441,10 @@ npm run dev
 
 ### 常用开发脚本
 
+本项目的 iToo 二开版本支持前后端一体热更新开发：在仓库根目录运行 `npm run dev:local`，访问 <http://127.0.0.1:3000>。本地配置、数据隔离及线上发布流程见 [本地开发与发布](doc/LOCAL_DEVELOPMENT_AND_RELEASE.md)。
+
 ```bash
+npm run dev:local      # iToo 前后端联调：回环地址 + Next.js 热更新
 npm run dev:frontend   # 仅启动 Next.js dev server（HMR，不走静态导出）
 npm run dev:backend    # 仅启动后端 server.js
 npm run build          # 构建前端静态产物到 frontend/out/

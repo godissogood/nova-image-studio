@@ -2171,7 +2171,7 @@ function createPluginTask(body, req) {
     throw error;
   }
 
-  const baseUrl = normalizeBaseUrl(body.baseUrl) || plugin.manifest.credential.defaultBaseUrl || '';
+  const baseUrl = pluginExecutor.resolvePluginBaseUrl(plugin, body.baseUrl);
   if (!baseUrl) {
     throw new Error('缺少 API 基地址，请在设置中填写');
   }
@@ -3581,7 +3581,7 @@ const startServer = () => {
       res.end('Not Found');
       return;
     }
-    handle(req, res, req.url || '/');
+    handle(req, res);
   });
 
   const nextUpgradeHandler = IS_DEV && typeof app.getUpgradeHandler === 'function'

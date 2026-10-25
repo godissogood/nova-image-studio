@@ -209,7 +209,7 @@ export function AgentMessageBubble({
       </div>
       <div className={cn('flex min-w-0 max-w-[80%] flex-col gap-2', isUser && 'items-end')}>
         {!isUser && message.reasoning && !isGenerationResult && (
-          <div className="rounded-xl border border-border/60 bg-muted/30">
+          <div className="itoo-agent-msg-surface-muted rounded-xl border border-border/60">
             <button
               type="button"
               onClick={() => setReasoningOpen(prev => !prev)}
@@ -231,7 +231,9 @@ export function AgentMessageBubble({
         ) : message.text ? (
           <div className={cn(
             'rounded-2xl px-3.5 py-2.5 text-sm',
-            isUser ? 'min-w-0 max-w-full break-all rounded-tr-sm bg-primary text-primary-foreground whitespace-pre-wrap' : 'min-w-0 max-w-full break-words rounded-tl-sm bg-muted md-message'
+            isUser
+              ? 'itoo-agent-msg-surface-user min-w-0 max-w-full break-all rounded-tr-sm text-primary-foreground whitespace-pre-wrap'
+              : 'itoo-agent-msg-surface min-w-0 max-w-full break-words rounded-tl-sm border border-border/70 md-message'
           )}>
             {isUser ? message.text : <div ref={mdContentRef} dangerouslySetInnerHTML={{ __html: renderedMarkdown }} />}
           </div>

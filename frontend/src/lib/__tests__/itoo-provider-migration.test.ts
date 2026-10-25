@@ -27,6 +27,18 @@ describe('iToo provider migration and model editor compatibility', () => {
     expect(second.providers?.every(provider => provider.baseUrl === 'https://api.itoo.me')).toBe(true);
   });
 
+  it('persists custom and API-loaded model ID modes independently for image and text models', () => {
+    const registry = legacy();
+    registry.imageModels[0] = { ...registry.imageModels[0], modelId: 'image-from-list', customModelId: 'manual-image-id', useCustomModelId: false };
+    registry.textModels[0] = { ...registry.textModels[0], modelId: 'gpt-6.1-sol', customModelId: 'manual-text-id', useCustomModelId: true };
+
+    saveRegistry(registry);
+
+    const saved = loadRegistry();
+    expect(saved.imageModels[0]).toMatchObject({ modelId: 'image-from-list', customModelId: 'manual-image-id', useCustomModelId: false });
+    expect(saved.textModels[0]).toMatchObject({ modelId: 'gpt-6.1-sol', customModelId: 'manual-text-id', useCustomModelId: true });
+  });
+
   it('preserves provider identities and disabled/video/audio rows when an individual model changes key or is deleted', () => {
     saveRegistry(legacy());
     const registry = loadRegistry();

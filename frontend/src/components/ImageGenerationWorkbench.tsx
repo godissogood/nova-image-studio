@@ -105,6 +105,7 @@ function getSettingsFallback(preferImageSettings: boolean): Partial<WorkbenchSet
 }
 
 export function ImageGenerationWorkbench({
+  wideMode = false,
   onSubmitText,
   onSubmitImage,
   disabled = false,
@@ -174,9 +175,13 @@ export function ImageGenerationWorkbench({
 
   useEffect(() => {
     if (!textareaRef.current) return;
+    if (wideMode) {
+      textareaRef.current.style.height = '';
+      return;
+    }
     textareaRef.current.style.height = 'auto';
     textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
-  }, [prompt]);
+  }, [prompt, wideMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -632,10 +637,16 @@ export function ImageGenerationWorkbench({
   const canClear = prompt.trim().length > 0 || pendingFiles.length > 0;
 
   return (
-    <div ref={formRef} className="space-y-4">
-      <div className="bg-muted/50 border border-border rounded-xl shadow-md">
+    <div ref={formRef} className={cn('space-y-4', wideMode && 'flex h-full min-h-0 flex-col')}>
+      <div className={cn(
+        'rounded-xl border border-border bg-muted/50 shadow-md',
+        wideMode && 'flex min-h-0 flex-1 flex-col overflow-hidden'
+      )}>
         {disabled ? (
-          <div className="flex min-h-40 flex-col items-center justify-center gap-4 px-4 py-8 text-center">
+          <div className={cn(
+            'flex flex-col items-center justify-center gap-4 px-4 py-8 text-center',
+            wideMode ? 'min-h-0 flex-1' : 'min-h-40'
+          )}>
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
               <Info className="h-5 w-5" />
             </div>
@@ -646,8 +657,8 @@ export function ImageGenerationWorkbench({
             <Button onClick={() => setMissingApiKeyDialogOpen(true)}>配置</Button>
           </div>
         ) : (
-          <>
-            <div className="p-4 pb-2">
+          <div className={cn(wideMode && 'flex min-h-0 flex-1 flex-col')}>
+            <div className="shrink-0 p-4 pb-2">
               <div className="flex gap-3">
                 <div
                   onDrop={refsSupported ? handleDrop : undefined}
@@ -703,7 +714,7 @@ export function ImageGenerationWorkbench({
             </div>
 
             {pendingFiles.length > 0 && (
-              <div className="px-4 pb-2">
+              <div className="shrink-0 px-4 pb-2">
                 <AttachmentChips
                   files={pendingFiles}
                   onRemove={handleRemovePending}
@@ -717,44 +728,51 @@ export function ImageGenerationWorkbench({
               </div>
             )}
 
-            <Textarea
-              ref={textareaRef}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={pendingFiles.length > 0 ? '描述如何调整参考图...' : '描述你想要生成的图像...'}
-              rows={3}
-              className="resize-none rounded-none border-0 bg-transparent px-3 pt-3 placeholder:text-placeholder focus-visible:border-0 focus-visible:ring-0 sm:px-4 sm:pt-4"
-            />
+            <div className={cn(
+              'mx-3 mb-1 mt-1 flex min-h-28 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xs transition-colors focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/15 sm:mx-4',
+              wideMode && 'min-h-0 flex-1'
+            )}>
+              <Textarea
+                ref={textareaRef}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={pendingFiles.length > 0 ? '描述如何调整参考图...' : '描述你想要生成的图像...'}
+                rows={wideMode ? undefined : 3}
+                className={cn(
+                  'resize-none rounded-none border-0 bg-transparent px-3 py-3 shadow-none placeholder:text-placeholder focus-visible:border-0 focus-visible:ring-0',
+                  wideMode ? 'h-full min-h-0 flex-1 [field-sizing:fixed]' : 'min-h-24'
+                )}
+              />
+            </div>
 
-            <div className="px-3 pt-2 pb-2 sm:px-4">
+            <div className="mt-2 flex shrink-0 flex-col gap-2 border-t border-border/80 px-3 py-3 sm:px-4">
               <GenerationParamsBar
                 value={{ model, outputSize, customSize, aspectRatio, temperature, parallelCount, gptImageAdvancedParams }}
                 onChange={handleParamsChange}
               />
+              <div className="flex items-center justify-end gap-1.5">
+                <Button variant="soft" size="icon" className="rounded-full" onClick={() => setQuickPromptOpen(true)} title="快速提示词">
+                  <Zap className="w-4 h-4" />
+                </Button>
+                <Button variant="soft" size="icon" className="rounded-full" onClick={() => setTextAssetPickerOpen(true)} title="导入提示词素材">
+                  <FileText className="w-4 h-4" />
+                </Button>
+                <Button variant="soft" size="icon" className="rounded-full" onClick={() => void handleSavePromptAsset()} disabled={!prompt.trim()} title="存为提示词素材">
+                  <Save className="w-4 h-4" />
+                </Button>
+                <Button variant="soft" size="icon" className="rounded-full" onClick={handleOptimize} disabled={!prompt.trim()} title="优化提示词">
+                  <Sparkles className="w-4 h-4" />
+                </Button>
+                <Button variant="soft" size="icon" className="rounded-full" onClick={handleClearDraft} disabled={!canClear} title="清空提示词和图片">
+                  <X className="w-4 h-4" />
+                </Button>
+                <Button onClick={handleSubmit} disabled={!canSubmit} size="icon" className="rounded-full" title={currentMode === 'image-to-image' ? '按图生图提交' : '按文生图提交'}>
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowUp className="w-5 h-5" />}
+                </Button>
+              </div>
             </div>
-
-            <div className="ml-auto flex w-full justify-end gap-2 px-3 pb-2 sm:w-auto sm:px-4">
-              <Button variant="ghost" size="icon" onClick={() => setQuickPromptOpen(true)} title="快速提示词">
-                <Zap className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => setTextAssetPickerOpen(true)} title="导入提示词素材">
-                <FileText className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => void handleSavePromptAsset()} disabled={!prompt.trim()} title="存为提示词素材">
-                <Save className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={handleOptimize} disabled={!prompt.trim()} title="优化提示词">
-                <Sparkles className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" size="icon" onClick={handleClearDraft} disabled={!canClear} title="清空提示词和图片">
-                <X className="w-5 h-5" />
-              </Button>
-              <Button onClick={handleSubmit} disabled={!canSubmit} size="icon" title={currentMode === 'image-to-image' ? '按图生图提交' : '按文生图提交'}>
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowUp className="w-5 h-5" />}
-              </Button>
-            </div>
-          </>
+          </div>
         )}
       </div>
 

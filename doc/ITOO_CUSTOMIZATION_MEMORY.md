@@ -1,5 +1,81 @@
 # itoo.me 二开记忆
 
+## 设置保存提示与视频插件凭据保护（2026-10-26，本地预览）
+
+设置弹窗底部原先以左侧文字提示保存结果，现改用顶部居中的 Toast，显示5秒并可手动关闭；错误提示带 `role="alert"` 与 assertive live region，成功/普通提示使用 status/polite。设置保存成功、配置不完整、浏览器存储失败和模型“保存并检查”结果均复用该 Toast。
+
+MCP 在 `http://127.0.0.1:3000/` 以临时未完成的图片模型触发保存校验失败。屏幕截图确认红色提示覆盖在设置弹窗上方；DOM 显示提示位于视口顶部、`z-index:10000`，ARIA role 为 `alert`。删除临时模型后恢复到本次打开设置时的空配置，没有保存临时或空配置。成功提示复用相同组件及其无条件可见样式；为避免写入覆盖测试空配置，本轮未实际触发成功保存。
+
+视频插件设置的 API Key 与 Base URL 字段调整为左侧只读固定 `https://api.itoo.me`、右侧 API Key 和较小说明，并增加“保存并检查”。前端保存逻辑固定该地址；后端 `grok-video` 执行器忽略客户端传入的 `baseUrl`，强制使用 iToo 中转入口。插件目录路径从设置页、空状态页面及插件注册表 API 摘要中隐藏。
+
+验证通过：`npm run lint`、前端 `npm run test:run`（76文件/708项）、前端 `npx tsc --noEmit`、后端 `npm test`（126项）、`git diff --check`。Vitest仍有测试环境 `jsx` 非布尔属性提示及 jsdom 相对 `/api/nova/plugins` URL 解析错误日志，但测试退出码为0。MCP 当前页未捕获浏览器控制台 error/warn。3000本地预览保持打开；未提交、推送或上线。
+
+## 模型配置备注命名和字段层级（2026-10-25，本地预览）
+
+按用户要求直接在主项目 `nova-image-studio` 设置弹窗调整图片模型与文本推理模型：原“显示名称”改为“配置备注”，并与“内置模板”交换表单位置；新增模型分别按类型递增命名为“图片模型1、图片模型2…”和“文本模型1、文本模型2…”。切换图片/文本内置模板会更新协议、模型 ID、固定 Base URL 及能力参数，不再用模板名称覆盖配置备注。字段主标签“模型 ID”“API Key”使用14px，辅助说明“要调用的模型”“网站里创建的 API”使用12px。已有保存数据不会因本次改动被批量重命名。
+
+MCP 在 `http://127.0.0.1:3000/` 核对图片模型1/2、文本模型1与字段层级；图片模型切换内置模板后“图片模型1”备注保持。测试新建的模型均未保存，并通过“丢弃更改”清除。`frontend/src/components/SettingsModal.tsx` 定向 ESLint、TypeScript 和 `git diff --check` 通过；未跑全量测试/构建，未提交、推送或上线。独立 `nova-ui-preview` 与线上均未改动。
+
+## Ccode H3 前端继续隐藏（2026-10-25）
+
+用户再次确认不需要在前端显示 Ccode H3，继续隐藏。`frontend/src/lib/plugin-registry-client.ts` 的 `HIDDEN_PLUGIN_IDS` 过滤保持不变，后端插件仍保留；MCP 核对设置→插件和视频工作台均未显示 Ccode H3，Grok 视频插件仍可见。没有填写密钥或提交任务；目标文件 ESLint 通过。检查期间曾见到指向 `frontend/src/app/layout.tsx` 主题初始化脚本的 Next.js 开发错误面板，本次未处理，也不把它归因于插件过滤。
+
+## Nova 官方功能差异与 Electron 打包状态（2026-10-25，只读核查）
+
+官方在线 `upstream/main` 为 `b8cd44cc083a0429f8df6a7c9fc5b935b7ae0731`（3.4.0）；本地已提交 `main` / `origin/main` 为 `1b65dcbb1f878a94e530cb7455b1bfbfc1564c58`，包含该官方提交且未发现整块缺失的官方文件。注意分清提交版和工作树：已提交版仍有供应商设置面板；当前未提交工作树已按用户决定移除它及模型目录导入客户端/测试。工作树仍保留 `provider-registry.ts`、模型迁移/关联、每模型 API Key 与协议配置；保存的 provider 数据不会因此整体删除。宽屏模式按钮和偏好已由响应式布局替代。官方 Ccode H3 插件代码仍在后端，但本地前端按既有决定隐藏。
+
+Electron 主进程、`electron-builder.yml`、`electron:dist*` 命令与 `.github/workflows/desktop-release.yml` 在本地仍存在，且与官方配置一致。源码目标为 Windows NSIS、macOS arm64 ZIP、Linux AppImage；CI 只跑 Windows/macOS。GitHub API 于核查日显示官方及本站 fork 均为0个 Releases、官方桌面 workflow 为0次运行，本地没有 `release/` 目录或已构建产物。因此打包能力存在，但没有证据表明已有可下载的正式安装包。配置实际未声明 DMG，尽管 workflow 注释提到 `.dmg`；macOS 目前构建 ZIP。桌面安装产品名仍是 `Nova Image Studio`。
+
+逐项证据与文件路径见 `G:/Codex_x/中转站/output/nova-feature-gap-audit-2026-10-25/对照报告.md`。Mem0 `project:itoo-relay` 精确交接 `nova-feature-audit-20261025-b8cd44cc` 已通过独立 GET、通用列表和 MCP 定向检索回读；普通 `mem0_add` 未返回新增片段，后按项目既有 `/v1/handoffs` 流程写入。本轮只读盘点，没有恢复供应商功能或改应用代码。
+
+## Nova 设置弹窗文字层级与工作流默认模型区（2026-10-25，本地完成）
+
+按用户要求将“按功能单独指定（可选）”从常用默认模型区拆开，作为模型配置页底部独立折叠区；九项工作流选择及模型检查保留在展开内容内。供应商管理入口继续移除。
+
+设置弹窗统一文字层级：区块标题18px/600、次级标题16px/600、字段标签14px/500、正文和注释14px/24px行距。图片模型、文本推理模型、视频插件、备份和关于页面共用 `SettingsSectionHeading`，模型字段与插件凭据标签同步加强。
+
+MCP在1719×811和390×844检查模型、插件、备份、关于四页；区块标题和正文层级可区分，窄屏插件字段转为单列，弹窗 `scrollWidth` 未超过可视宽度。最终将视口恢复默认，模型配置页保持打开。
+
+前端 lint 和 TypeScript 通过，完整前端测试75个文件/705项通过，`git diff --check`通过。Vitest仍输出现有测试中的 `jsx` 属性与 jsdom 相对 `/api/nova/plugins` URL错误日志，但退出码为0。
+
+MCP控制台留有14:42:23 UTC开发热更新阶段的hydration mismatch，以及 `ModelConfigurationPanel` / `advancedRef` 未定义错误。当前源码搜索不到这两个旧标识；当前设置弹窗能够正常渲染，后续页签检查未新增日志。该次热更新日志尚未单独复现或明确归因，不宣称本轮控制台全程零错误。3000本地预览仍监听；本地实施，未提交、未推送或上线。
+
+## Nova 模型配置弹窗顺序调整，已在本地完成（2026-10-25）
+
+按用户最新决定，设置弹窗顶部依次为“图片模型配置”“文本推理模型配置”，其后为“常用默认模型”。新增图片模型和新增文本推理模型是两个直接入口；不再提供“连接并添加模型”、读取模型目录、供应商页签或手动/高级配置折叠入口。模型模板、协议、ID、独立 API Key、默认用途、可选模型检查和统一保存逻辑保留。无模型时分别提示先添加图片模型或文本推理模型。
+
+已移除无引用的`frontend/src/lib/provider-models-client.ts`及其专属测试；服务端目录代理未修改。MCP 在1604×889本地视口确认弹窗1024×858、标题顺序正确、目录/供应商入口不显示、控制台error/warn为0；点测两个新增入口均打开对应编辑表单并显示模板、模型 ID 与独立 API Key 字段，删除未保存草稿后回到空配置。`npm run lint`、`npm run test:run`（75文件/705测试）、`npx tsc --noEmit`、`git diff --check`通过。设置弹窗及模型配置均仅本地；未提交、推送或上线。
+
+本节下方2026-10-24的“连接 Key→读取目录→批量添加”方案记录是先前版本，已由本次用户决定取代，不代表当前界面行为。
+
+## Nova 工作区自适应与视口底部修复，已在本地完成（2026-10-25）
+
+工作区以桌面布局为基调，根据视口宽度自动适配窄屏；宽屏切换按钮、旧 `nova-wide-mode` 偏好和画布/UI设计的宽屏门槛提示已移除。根工作区使用 `min-h-dvh` 并允许页面纵向滚动，画布随视口分配高度；修复 Dialog 关闭后的 body 滚动锁残留。窄屏下 Agent 会话栏使用抽屉，导航会将选中项滚入可视区域。
+
+MCP 桌面检查视口为1604×889：无宽屏按钮，Agent 输入框及工具栏完整显示，documentElement高度889且滚动高度889，body高度存在1px浏览器取整差异，控制台error/warn为0。390×844及1024×768窄屏/中等宽度检查通过。`npm run lint`、`npm run test:run`（78文件/718测试）、`npx tsc --noEmit`、`git diff --check`通过。3000服务保留给用户本地预览；本次未提交、未推送、未上线。
+
+Mem0：本次 `mem0_search` 与 `mem0_add` 均报工具错误，未获得有效写入或回读；本地已保存、Mem0 未完成。
+
+页头光标：标题和描述是普通 `h2`/`p`，并非可编辑控件；浏览器默认将可选文字显示为 I 形鼠标指针。`.itoo-page-hero` 设置 `cursor: default` 后显示普通箭头，保留文字选择能力。MCP 已确认页头计算值为 `default`，真实 textarea/input 仍为 `text`。摘要已保存至 `project:itoo-relay` 并经定向搜索回读命中。
+
+## 模型配置新手界面优化，已在本地完成（2026-10-24）
+
+设置模型配置首屏改为“连接 Key → 选择模型 → 保存”的短路径。常用图片模型、常用文本模型直接可选；九项工作流默认模型放入“按功能单独指定”折叠区；管理 Key、已添加模型、手动添加与高级设置默认折叠。API地址固定展示`https://api.itoo.me`，模型目录读取后支持搜索、勾选、批量添加并在完成后自动收起。模板、自定义模型ID、协议、图片参数、备注、独立Key和原有独立功能模型选择均保留，常用模型选择不会覆盖独立功能配置。
+
+涉及文件：`frontend/src/components/settings/CommonModelSettings.tsx`、`frontend/src/lib/model-defaults.ts`、`frontend/src/components/ModelConfigurationPanel.tsx`、`frontend/src/components/SettingsModal.tsx`及对应测试。前端717项测试、ESLint、TypeScript、生产构建和diff检查通过；桌面浅色/深色与390px窄屏设置回归通过，控制台错误/警告为0。证据：`G:/Codex_x/中转站/output/playwright/nova-model-onboarding-2026-10-24/`。本轮只改本地工作区，未提交、未推送、未上线，未发真实模型请求。
+
+## 统一模型配置入口本地完成，未发布（2026-10-23）
+
+设置中的“供应商”页签已合入“模型配置”。默认通过本站 Key 读取目录、搜索分页勾选后显式添加，统一保存；多 Key 配置可切换/备注/确认删除。原模板、自定义模型 ID/协议/参数、默认模型和独立 Key 保留在高级编辑，固定 API 地址和 registry 格式不变。已添加模型不重复导入；目录不自动保存；视频/音频提示转插件。换 Key/连接会取消旧请求。保存后再次编辑显示未保存，不完整模型会阻止保存。
+
+前端709/709、零警告lint、TypeScript和生产构建通过；独立Edge模拟目录37条交互通过，包含旧配置迁移、模板/独立Key/默认关联、保存刷新3次、手机/深色/低高度，最终pageerror0。既有Agent测试改为等待effect后断言，不改业务。开发HMR探索曾出现insertBefore异常，干净刷新正常，根因未追查；没有真实模型/付费调用或生产镜像验收。
+
+本轮只本地修改，HEAD仍1b65dcb，未提交/推送/上线；此前未提交开发入口和Compose日志改动保留。3000开发服务已保留运行，用户可刷新http://127.0.0.1:3000/后打开设置体验，实时状态需重核。下方11:46关闭服务为历史阶段，已被12:29重新启动覆盖。报告G:/Codex_x/中转站/output/playwright/nova-unified-models-2026-10-23/本地验收报告.md。
+
+## 本地开发入口已修复，未发布
+
+本次本地开发入口完善（2026-10-23 11:46:58）：backend/server.js开发分支改为handle(req,res)，修复Next.js解析URL导致首页500；package.json新增npm run dev:local，前后端同入口127.0.0.1:3000并支持前端热更新。实际脚本启动和三个HTTP入口200，后端lint及124/124测试通过，检查后服务已关闭。开发修复/命令/文档尚未提交或部署，保留之前5行Compose logging改动。线上仍d27f6cb/3.4.0；已提交本地/远端/生产HEAD1b65dcb一致。网站没有push自动部署，现有Actions仅桌面版；操作指引doc/LOCAL_DEVELOPMENT_AND_RELEASE.md，证据工作区output/nova-dev-workflow-2026-10-23/。
+
 最后更新：2026-10-22
 
 ## 项目身份

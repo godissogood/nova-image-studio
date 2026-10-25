@@ -18,7 +18,7 @@ export function Toast({
   onDismiss: (id: string) => void;
 }) {
   useEffect(() => {
-    const timer = setTimeout(() => onDismiss(toast.id), 3000);
+    const timer = setTimeout(() => onDismiss(toast.id), 5000);
     return () => clearTimeout(timer);
   }, [toast.id, onDismiss]);
 
@@ -34,12 +34,17 @@ export function Toast({
 
   return createPortal(
     <div
-      className={`fixed bottom-4 right-4 z-[10000] flex items-center gap-2 max-w-sm rounded-xl border ${borderColor} bg-card px-4 py-3 text-sm ${textColor} shadow-lg`}
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+      aria-atomic="true"
+      className={`fixed left-1/2 top-4 z-[10000] flex min-h-12 w-fit max-w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 items-center gap-3 rounded-xl border ${borderColor} bg-card px-5 py-3 text-sm ${textColor} shadow-xl`}
     >
       <Icon className="w-4 h-4 flex-shrink-0" />
       <span className="flex-1">{toast.message}</span>
       <button
         onClick={() => onDismiss(toast.id)}
+        aria-label="关闭提示"
+        title="关闭提示"
         className="flex-shrink-0 opacity-60 hover:opacity-100"
       >
         <X className="w-3.5 h-3.5" />

@@ -5,7 +5,7 @@ const { resolveTemplate } = require('../plugin-runtime/template');
 const { classifyStatus, extractProgress, normalizeResult, pickFirstString } = require('../plugin-runtime/extract');
 const { validatePluginPackage } = require('../plugin-runtime/validate');
 const { validateAndNormalizeInput, resolveModelFromFacets, InputError } = require('../plugin-runtime/input');
-const { buildContext, assertUrlAllowed, isLocallyScopedHost } = require('../plugin-runtime/executor');
+const { buildContext, assertUrlAllowed, isLocallyScopedHost, resolvePluginBaseUrl } = require('../plugin-runtime/executor');
 const { verifyPlugin } = require('../plugin-runtime/verify');
 const registry = require('../plugin-runtime/registry');
 
@@ -174,6 +174,19 @@ test('ccode-h3 插件通过全部校验并被加载', () => {
   assert.equal(plugin.manifest.models.length, 8);
   assert.equal(plugin.uiSchema.modelSelector.variants.length, 8);
   assert.ok(plugin.allowedHosts.has('pro.ccode.vip'));
+});
+
+test('grok-video 忽略客户端基地址并固定使用 iToo 中转入口', () => {
+  const plugin = registry.getPlugin('grok-video');
+  assert.ok(plugin);
+  assert.equal(resolvePluginBaseUrl(plugin, 'https://attacker.example'), 'https://api.itoo.me');
+  assert.equal(resolvePluginBaseUrl(plugin, ''), 'https://api.itoo.me');
+  assert.equal(assertUrlAllowed(plugin, `${resolvePluginBaseUrl(plugin, 'http://127.0.0.1')}/v1/videos`, '创建请求'), 'https://api.itoo.me/v1/videos');
+});
+
+test('插件注册表 API 摘要不向前端公开插件目录绝对路径', () => {
+  const described = registry.describeRegistryForClient();
+  assert.equal(Object.hasOwn(described, 'pluginsDir'), false);
 });
 
 test('下发给前端的描述不含 provider 模板', () => {

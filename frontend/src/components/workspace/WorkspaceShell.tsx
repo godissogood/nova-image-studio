@@ -17,7 +17,7 @@ import { PromptGallery } from '@/components/PromptGallery';
 import { SettingsModal, type SettingsTab } from '@/components/SettingsModal';
 import { MissingApiKeyDialog } from '@/components/MissingApiKeyDialog';
 import { useQueueStatus } from '@/hooks/useQueueStatus';
-import { useWideMode } from '@/hooks/useWideMode';
+import { useResponsiveWorkspaceLayout } from '@/hooks/useResponsiveWorkspaceLayout';
 import { useServerTaskPolling } from '@/hooks/useServerTaskPolling';
 import { useWorkspaceJobs } from '@/hooks/useWorkspaceJobs';
 import { WorkspaceHeader, type WorkspaceHeaderRef } from '@/components/workspace/WorkspaceHeader';
@@ -27,15 +27,8 @@ import { PromptGalleryAccessDialog, usePromptGalleryAccess } from '@/components/
 import { usePromptGalleryConfig } from '@/hooks/usePromptGalleryConfig';
 import { ConfirmDialog } from '@/components/workspace/dialogs/ConfirmDialog';
 import { Toast, type ToastData } from '@/components/workspace/Toast';
-import { Button, buttonVariants } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Shuffle, Settings, User, Wallpaper, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { getNovaTask } from '@/lib/ccode-task-client';
 import { finalizeCompletedServerTask } from '@/lib/workspace-task-service';
 import { classifyTaskFailure } from '@/lib/task-failure';
@@ -48,13 +41,51 @@ import {
   type SubmitActions,
 } from '@/lib/workspace-task-service';
 import { cn } from '@/lib/utils';
-import { BA_RANDOM_URL, BING_WALLPAPER_URL } from '@/lib/constants';
 import { getActiveAgentSessionId, setActiveAgentSessionId } from '@/lib/agent-sessions';
 import { setAgentSession } from '@/lib/agent-context-store';
 
+const PAGE_HERO: Record<string, { title: string; description: string }> = {
+  'image-generation': {
+    title: '图片创作',
+    description: '用文字或参考图生成高质量图像，支持批量与多模型切换。',
+  },
+  agent: {
+    title: 'AI 对话',
+    description: '和助手聊聊你的想法，确认方案后再开始生成。',
+  },
+  'video-generation': {
+    title: '视频创作',
+    description: '用插件工作台完成视频生成、参数复用与历史管理。',
+  },
+  canvas: {
+    title: '无限画布',
+    description: '节点式画布生图 · 连线引用 · 生成走任务队列',
+  },
+  'image-to-slice': {
+    title: 'UI设计模式',
+    description: 'AI 拆解 UI 图为切图资产 · 手动校准 · 网页复刻',
+  },
+  assets: {
+    title: '我的素材',
+    description: '集中管理图片与提示词素材，随时复用到各工作台。',
+  },
+  'reverse-prompt': {
+    title: '反推提示词',
+    description: '从图片反推可用提示词，快速迁移风格与构图。',
+  },
+  gif: {
+    title: '动图生成',
+    description: '把静态画面做成动图，并调节帧与导出参数。',
+  },
+  'prompt-gallery': {
+    title: '提示词广场',
+    description: '浏览精选提示词，一键带入创作流程。',
+  },
+};
+
 export function WorkspaceShell() {
   const queueStatus = useQueueStatus();
-  const { wideMode, toggleWideMode } = useWideMode();
+  const { desktopLayout: wideMode } = useResponsiveWorkspaceLayout();
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** 设置弹层打开时停在哪一页。插件凭据的提示条要直达插件页，其余入口都回到模型配置。 */
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('models');
@@ -225,6 +256,8 @@ export function WorkspaceShell() {
         ? '图生图'
         : '当前模式';
 
+  const pageHero = PAGE_HERO[activeTab] ?? PAGE_HERO['image-generation'];
+
   const handleConfirmClearGeneration = useCallback(() => {
     if (!generationClearScope) return;
     const scope = generationClearScope;
@@ -244,29 +277,27 @@ export function WorkspaceShell() {
   return (
     <div
       className={cn(
-        'itoo-app-shell mx-auto flex min-h-screen w-full flex-col gap-4 overflow-x-hidden px-3 py-3 transition-[max-width] duration-200 sm:gap-5 sm:px-6 sm:py-5 lg:px-8',
-        wideMode ? 'max-w-none xl:h-dvh xl:min-h-0 xl:gap-3 xl:py-3 xl:overflow-hidden' : 'max-w-5xl',
-        !wideMode && activeTab === 'agent' && 'h-dvh min-h-0 overflow-hidden'
+        'itoo-app-shell flex w-full flex-col overflow-x-hidden transition-[max-width] duration-200',
+        wideMode
+          ? 'min-h-dvh max-w-none'
+          : 'mx-auto min-h-dvh max-w-5xl gap-4 px-3 py-3 sm:gap-5 sm:px-6 sm:py-5 lg:px-8',
       )}
     >
       <div className={cn(
-        'itoo-app-frame flex-1 bg-transparent shadow-none sm:rounded-3xl sm:bg-card/95 sm:shadow-sm sm:border sm:border-border/70',
-        wideMode && 'flex min-h-0 flex-col',
-        !wideMode && activeTab === 'agent' && 'flex min-h-0 flex-col'
+        'itoo-app-frame flex min-h-0 flex-1 flex-col',
+        !wideMode && activeTab === 'agent' && 'min-h-0'
       )}>
         <div className={cn(
-          'itoo-app-body p-0 sm:p-5',
+          'itoo-app-body min-h-0',
           wideMode
-            ? 'flex h-full flex-1 flex-col min-h-0 sm:p-3'
+            ? 'flex flex-1 flex-col'
             : activeTab === 'agent'
-              ? 'flex h-full flex-1 flex-col min-h-0 gap-4'
+              ? 'flex flex-1 flex-col gap-4'
               : 'space-y-4'
         )}>
           <WorkspaceHeader
             ref={headerRef}
             queueStatus={queueStatus}
-            wideMode={wideMode}
-            onToggleWideMode={toggleWideMode}
             onOpenSettings={() => openSettings()}
             onLogoClick={promptGallery.handlePromptGalleryEntry}
             sidebarMode={wideMode}
@@ -279,114 +310,117 @@ export function WorkspaceShell() {
             className={cn(
               'itoo-workspace-tabs',
               wideMode
-                ? 'gap-4 xl:flex-row xl:flex-1 xl:min-h-0'
+                ? 'flex flex-1 min-h-0 flex-col gap-3 xl:flex-row xl:gap-4'
                 : activeTab === 'agent'
                   ? 'gap-2 flex flex-col flex-1 min-h-0'
                   : 'gap-2'
             )}
           >
-            <div className={cn('itoo-workspace-nav flex min-h-0 flex-col', wideMode && 'self-stretch sticky top-0 h-full min-h-0 overflow-y-auto xl:shrink-0')}>
+            <aside className={cn(
+              'itoo-workspace-nav flex min-h-0 flex-col',
+              wideMode && 'itoo-workspace-nav-fixed self-stretch xl:h-full xl:shrink-0 xl:overflow-hidden'
+            )}>
               {wideMode && (
                 <button
                   type="button"
                   onClick={promptGallery.handlePromptGalleryEntry}
-                  className="flex items-center gap-2 px-2 pt-3 pb-1 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="itoo-brand-block flex w-full items-center rounded-none text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label="iToo Image logo"
                 >
                   <img
                     src="/favicon.png"
                         alt="iToo Image"
-                    className="h-8 w-8 shrink-0 rounded-lg object-cover ring-1 ring-border/60"
+                    className="shrink-0 object-cover ring-1 ring-border/70"
                   />
                   <div className="min-w-0">
-                      <h2 className="truncate text-base font-semibold tracking-tight leading-tight">iToo Image</h2>
-                    <p className="truncate text-[11px] text-muted-foreground leading-tight">批量 API 图像生成器</p>
+                      <h2 className="itoo-title-brand truncate">iToo Image</h2>
+                    <p className="itoo-subtitle mt-0.5 truncate">创作中心</p>
                   </div>
                 </button>
               )}
-              <div className={cn(wideMode ? 'flex flex-col py-4 flex-1' : 'flex flex-col py-1')}>
-                <WorkspaceModeTabs wideMode={wideMode} showPromptGallery={promptGallery.showPromptGallery} />
+              <div className={cn(wideMode ? 'flex min-h-0 flex-1 flex-col overflow-y-auto py-1' : 'flex flex-col py-1')}>
+                <WorkspaceModeTabs wideMode={wideMode} showPromptGallery={promptGallery.showPromptGallery} activeTab={activeTab} />
               </div>
 
               {wideMode && (
-                <div className="hidden flex-col gap-1 xl:flex">
-                  <div className="flex flex-col gap-1">
-                    <DropdownMenu modal={false}>
-                      <DropdownMenuTrigger
-                        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'w-full justify-start gap-2 rounded-xl px-3 text-xs')}
-                        title="随机图片"
-                        aria-label="随机图片"
-                      >
-                        <Shuffle className="size-4 shrink-0" />
-                        随机图片
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" sideOffset={4}>
-                        <DropdownMenuItem onClick={() => headerRef.current?.openRandomImage(BA_RANDOM_URL, 'BA人物')}>
-                          <User className="w-4 h-4" />
-                          BA人物
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => headerRef.current?.openRandomImage(BING_WALLPAPER_URL, 'Bing壁纸')}>
-                          <Wallpaper className="w-4 h-4" />
-                          Bing壁纸
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                <div className="itoo-sidebar-tools mt-auto hidden flex-col xl:flex">
+                  <div className="itoo-sidebar-tools-label">快捷操作</div>
+                  <div className="itoo-sidebar-actions">
+                    <ThemeToggle emphasize />
+                    <button
+                      type="button"
+                      className="itoo-sidebar-action itoo-sidebar-action-settings"
+                      onClick={() => openSettings()}
+                    >
+                      <span className="itoo-sidebar-action-icon" aria-hidden>
+                        <Settings className="size-3.5" />
+                      </span>
+                      <span>设置</span>
+                    </button>
                   </div>
 
-                  <div className="flex flex-col gap-1 [&_button]:w-full [&_button]:justify-start [&_button]:rounded-xl [&_button_svg]:size-4 [&_button_svg]:shrink-0">
-                    <ThemeToggle />
-                    <Button variant="outline" size="sm" className="w-full justify-start gap-2 rounded-xl px-3 text-xs" onClick={toggleWideMode}>
-                      {wideMode ? <PanelLeftClose className="size-4 shrink-0" /> : <PanelLeftOpen className="size-4 shrink-0" />}
-                      {wideMode ? '退出宽屏' : '宽屏'}
-                    </Button>
-                    <Button variant="outline" size="sm" className="w-full justify-start gap-2 rounded-xl px-3 text-xs" onClick={() => openSettings()}>
-                      <Settings className="size-4 shrink-0" />
-                      设置
-                    </Button>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <div className="h-px bg-border" />
+                  <div className="itoo-sidebar-queue">
                     {queueStatus ? (
-                      <div className="flex flex-col gap-1">
-                        <span className="rounded-full bg-muted px-3 py-1 text-center text-xs text-muted-foreground">
-                          并发 {queueStatus.processingCount}
-                        </span>
-                        <span className={cn(
-                          'rounded-full px-3 py-1 text-center text-xs',
-                          typeof queueStatus.queuedCount === 'number' && typeof queueStatus.maxQueueSize === 'number' && queueStatus.queuedCount >= queueStatus.maxQueueSize
-                            ? 'bg-destructive/10 text-destructive'
-                            : 'bg-muted text-muted-foreground'
-                        )}>
-                          排队 {queueStatus.queuedCount}{typeof queueStatus.maxQueueSize === 'number' ? ` (最大${queueStatus.maxQueueSize})` : ''}
-                        </span>
-                        <span className="rounded-full bg-muted px-3 py-1 text-center text-xs text-muted-foreground">
-                          状态 {queueStatus.acceptingNewTasks ? '开启' : '关闭'}
-                        </span>
-                        {queueStatus.serverMessage && (
-                          <span className="rounded-xl bg-destructive/10 px-3 py-1 text-center text-xs text-destructive">
-                            {queueStatus.serverMessage}
+                      <>
+                        <div className="itoo-sidebar-queue-row">
+                          <span>并发 {queueStatus.processingCount}</span>
+                          <span className={cn(
+                            typeof queueStatus.queuedCount === 'number' && typeof queueStatus.maxQueueSize === 'number' && queueStatus.queuedCount >= queueStatus.maxQueueSize
+                              ? 'text-destructive'
+                              : undefined
+                          )}>
+                            排队 {queueStatus.queuedCount}{typeof queueStatus.maxQueueSize === 'number' ? ` / ${queueStatus.maxQueueSize}` : ''}
                           </span>
+                        </div>
+                        <div className="itoo-sidebar-queue-status">
+                          状态 {queueStatus.acceptingNewTasks ? '开启' : '关闭'}
+                        </div>
+                        {queueStatus.serverMessage && (
+                          <span className="itoo-sidebar-queue-alert">{queueStatus.serverMessage}</span>
                         )}
-                      </div>
+                      </>
                     ) : (
-                      <span className="text-center text-xs text-muted-foreground">排队状态未知</span>
+                      <span>排队状态未知</span>
                     )}
                   </div>
-                </div>)}
-            </div>
+                </div>
+              )}
+            </aside>
 
             <div className={cn(
               'itoo-workspace-content',
-              wideMode && 'xl:flex xl:flex-1 xl:min-h-0 xl:min-w-0',
-              wideMode && (activeTab === 'image-generation' || activeTab === 'agent'
-                ? 'xl:overflow-hidden'
-                : 'xl:overflow-y-auto xl:overflow-x-hidden'),
+              wideMode && 'itoo-main-stage xl:min-w-0',
               !wideMode && activeTab === 'agent' && 'flex flex-1 flex-col min-h-0'
             )}>
-              <TabsContent value="image-generation" keepMounted className={cn(wideMode ? 'space-y-6 xl:flex xl:min-h-0 xl:space-y-0' : 'space-y-3')}>
-                <div className={cn(wideMode ? 'grid items-start gap-5 xl:h-full xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(460px,0.95fr)_minmax(0,1.35fr)] xl:items-stretch' : 'space-y-3')}>
-                  <div className={cn(wideMode && 'xl:h-full xl:min-h-0 xl:overflow-y-auto xl:pr-1')}>
+              <div className={cn(
+                activeTab === 'agent' && 'flex min-h-0 flex-1 flex-col bg-transparent',
+                wideMode && activeTab !== 'agent' && 'itoo-main-card',
+                wideMode && (activeTab === 'image-generation' || activeTab === 'canvas' || activeTab === 'image-to-slice' || activeTab === 'reverse-prompt' || activeTab === 'gif') && 'overflow-hidden',
+                wideMode && activeTab !== 'agent' && activeTab !== 'image-generation' && activeTab !== 'canvas' && activeTab !== 'image-to-slice' && activeTab !== 'reverse-prompt' && activeTab !== 'gif' && 'overflow-y-auto overflow-x-hidden'
+              )}>
+                {activeTab !== 'agent' && (
+                  <header className={cn(
+                    'itoo-page-hero',
+                    !wideMode && 'itoo-page-hero-compact',
+                    (activeTab === 'canvas' || activeTab === 'image-to-slice' || activeTab === 'reverse-prompt' || activeTab === 'gif') && 'shrink-0'
+                  )}>
+                    <h2 className="itoo-page-title">{pageHero.title}</h2>
+                    <span className="itoo-page-separator" aria-hidden="true">—</span>
+                    <p className="itoo-page-desc">{pageHero.description}</p>
+                  </header>
+                )}
+
+              <TabsContent value="image-generation" keepMounted className={cn(
+                wideMode
+                  ? 'flex min-h-0 flex-1 flex-col px-4 pb-4'
+                  : 'space-y-3'
+              )}>
+                <div className={cn(
+                  wideMode
+                    ? 'grid min-h-0 flex-1 items-stretch gap-5 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.35fr)]'
+                    : 'space-y-3'
+                )}>
+                  <div className={cn(wideMode && 'flex min-h-0 h-full flex-col')}>
                     <ImageGenerationWorkbench
                       wideMode={wideMode}
                       onSubmitText={data => void submitTextToImage(data, submitActions, handleSubmitError)}
@@ -427,31 +461,35 @@ export function WorkspaceShell() {
               <TabsContent
                 value="agent"
                 keepMounted
-                className={cn('flex-1 flex flex-col min-h-0', wideMode && 'xl:flex xl:min-h-0 xl:flex-1 xl:flex-col')}
+                className={cn(
+                  'flex min-h-0 flex-1 flex-col',
+                  wideMode && 'xl:min-h-0'
+                )}
               >
                 {activeSessionId && (
-                  <div className="flex min-h-0 flex-1 gap-3">
+                  <div className={cn(
+                    'flex min-h-0 flex-1',
+                    wideMode ? 'itoo-agent-stage' : 'gap-3'
+                  )}>
                     <SessionSwitcher
                       activeSessionId={activeSessionId}
                       onSessionChange={handleAgentSessionChange}
                       mobileOpen={agentSidebarOpen}
                       onMobileOpenChange={setAgentSidebarOpen}
                     />
-                    <div className="flex min-w-0 flex-1 flex-col">
-                      <AgentChatWorkspace
-                        key={activeSessionId}
-                        activeSessionId={activeSessionId}
-                        wideMode={wideMode}
-                        disabled={!workspace.hasApiKey}
-                        onConfigureApiKey={() => openSettings()}
-                        onToggleSidebar={() => setAgentSidebarOpen(prev => !prev)}
-                      />
-                    </div>
+                    <AgentChatWorkspace
+                      key={activeSessionId}
+                      activeSessionId={activeSessionId}
+                      wideMode={wideMode}
+                      disabled={!workspace.hasApiKey}
+                      onConfigureApiKey={() => openSettings()}
+                      onToggleSidebar={() => setAgentSidebarOpen(prev => !prev)}
+                    />
                   </div>
                 )}
               </TabsContent>
 
-              <TabsContent value="video-generation" keepMounted className={cn(wideMode ? 'space-y-6 xl:flex xl:min-h-0 xl:space-y-0' : 'space-y-3')}>
+              <TabsContent value="video-generation" keepMounted className={cn(wideMode ? 'space-y-6 px-4 pb-4 xl:flex xl:min-h-0 xl:flex-1 xl:space-y-0' : 'space-y-3')}>
                 <div className={cn(wideMode ? 'grid items-start gap-5 xl:h-full xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(460px,0.95fr)_minmax(0,1.35fr)] xl:items-stretch' : 'space-y-3')}>
                   <div className={cn(wideMode && 'xl:h-full xl:min-h-0 xl:overflow-y-auto xl:pr-1')}>
                     <PluginWorkbench
@@ -473,30 +511,32 @@ export function WorkspaceShell() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="canvas" keepMounted className={cn('min-h-0', wideMode ? 'xl:flex xl:min-h-0 xl:flex-1 xl:flex-col' : 'space-y-6')}>
+              <TabsContent value="canvas" keepMounted className={cn('min-h-0', wideMode ? 'flex min-h-0 flex-1 flex-col px-4 pb-3' : 'space-y-4')}>
                 <CanvasWorkspace
                   wideMode={wideMode}
                   onConfigureApiKey={() => openSettings()}
-                  onEnableWideMode={() => { if (!wideMode) toggleWideMode(); }}
                   showToast={showToast}
                   showPromptGallery={promptGallery.showPromptGallery}
                 />
               </TabsContent>
 
-              <TabsContent value="image-to-slice" keepMounted className={cn(wideMode ? 'space-y-6 xl:min-h-0 xl:flex xl:flex-col' : 'space-y-6')}>
+              <TabsContent value="image-to-slice" keepMounted className={cn('min-h-0', wideMode ? 'flex min-h-0 flex-1 flex-col px-4 pb-3' : 'space-y-4')}>
                 <SliceWorkspace
                   wideMode={wideMode}
                   onConfigureApiKey={() => openSettings()}
-                  onEnableWideMode={() => { if (!wideMode) toggleWideMode(); }}
                   showToast={showToast}
                 />
               </TabsContent>
 
-              <TabsContent value="assets" keepMounted className={cn(wideMode ? 'space-y-6 xl:min-h-0 xl:min-w-0 xl:flex xl:flex-col' : 'space-y-6')}>
+              <TabsContent value="assets" keepMounted className={cn(wideMode ? 'space-y-6 px-4 pb-4 xl:min-h-0 xl:min-w-0 xl:flex xl:flex-1 xl:flex-col' : 'space-y-6')}>
                 <AssetsWorkspace wideMode={wideMode} active={activeTab === 'assets'} />
               </TabsContent>
 
-              <TabsContent value="reverse-prompt" keepMounted className={cn(wideMode ? 'space-y-6 xl:min-h-0 xl:flex xl:flex-col' : 'space-y-6')}>
+              <TabsContent value="reverse-prompt" keepMounted className={cn(
+                wideMode
+                  ? 'flex min-h-0 flex-1 flex-col px-4 pb-4'
+                  : 'space-y-3'
+              )}>
                 <ReversePromptForm
                   wideMode={wideMode}
                   disabled={!workspace.hasApiKey}
@@ -504,7 +544,11 @@ export function WorkspaceShell() {
                 />
               </TabsContent>
 
-              <TabsContent value="gif" keepMounted className={cn(wideMode ? 'space-y-6 xl:min-h-0 xl:flex xl:flex-col' : 'space-y-6')}>
+              <TabsContent value="gif" keepMounted className={cn(
+                wideMode
+                  ? 'flex min-h-0 flex-1 flex-col px-4 pb-4'
+                  : 'space-y-3'
+              )}>
                 <GifGenerationWorkspace
                   wideMode={wideMode}
                   hasApiKey={workspace.hasApiKey}
@@ -515,12 +559,13 @@ export function WorkspaceShell() {
               </TabsContent>
 
               {promptGallery.showPromptGallery && (
-                <TabsContent value="prompt-gallery" keepMounted>
-                  <div className={cn('bg-transparent p-0 shadow-none sm:rounded-2xl sm:bg-card sm:p-4 sm:shadow-sm sm:border sm:border-border', wideMode && 'sm:p-5')}>
+                <TabsContent value="prompt-gallery" keepMounted className={cn(wideMode && 'px-4 pb-4')}>
+                  <div className={cn('bg-transparent p-0 shadow-none', wideMode ? 'sm:p-0' : 'sm:rounded-2xl sm:bg-card sm:p-4 sm:shadow-sm sm:border sm:border-border')}>
                     <PromptGallery wideMode={wideMode} />
                   </div>
                 </TabsContent>
               )}
+              </div>
             </div>
           </Tabs>
         </div>

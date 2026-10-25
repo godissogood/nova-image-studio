@@ -9,6 +9,7 @@
  */
 
 import { applyMediaLimits } from '@/lib/plugin-media-config';
+import { ITOO_API_BASE_URL } from '@/lib/itoo-config';
 import type { InstalledPlugin } from '@/lib/plugin-schema';
 
 export interface PluginLoadFailure {
@@ -20,14 +21,12 @@ export interface PluginRegistrySnapshot {
   plugins: InstalledPlugin[];
   failures: PluginLoadFailure[];
   loadedAt: string;
-  pluginsDir: string;
 }
 
 const EMPTY_SNAPSHOT: PluginRegistrySnapshot = {
   plugins: [],
   failures: [],
   loadedAt: '',
-  pluginsDir: '',
 };
 
 // 部署中暂不提供的插件仍可保留在仓库里作为参考实现，但不在本站界面展示。
@@ -96,7 +95,6 @@ export async function loadPluginRegistry(force = false): Promise<PluginRegistryS
           : [],
         failures: Array.isArray(data?.failures) ? data.failures : [],
         loadedAt: typeof data?.loadedAt === 'string' ? data.loadedAt : '',
-        pluginsDir: typeof data?.pluginsDir === 'string' ? data.pluginsDir : '',
       };
       cache = snapshot;
       notify(snapshot);
@@ -161,25 +159,31 @@ export function getPluginCredential(plugin: InstalledPlugin): PluginCredential {
   const stored = readCredentialMap()[plugin.id];
   return {
     apiKey: stored?.apiKey || '',
-    baseUrl: stored?.baseUrl || plugin.credential.defaultBaseUrl || '',
+    baseUrl: plugin.id === 'grok-video'
+      ? ITOO_API_BASE_URL
+      : stored?.baseUrl || plugin.credential.defaultBaseUrl || '',
   };
 }
 
-export function setPluginCredential(pluginId: string, credential: Partial<PluginCredential>): void {
-  if (typeof window === 'undefined') return;
+export function setPluginCredential(pluginId: string, credential: Partial<PluginCredential>): boolean {
+  if (typeof window === 'undefined') return false;
   const map = readCredentialMap();
   const current = map[pluginId] || { apiKey: '', baseUrl: '' };
   map[pluginId] = {
     apiKey: credential.apiKey !== undefined ? credential.apiKey.trim() : current.apiKey,
-    baseUrl: credential.baseUrl !== undefined ? credential.baseUrl.trim() : current.baseUrl,
+    baseUrl: pluginId === 'grok-video'
+      ? ITOO_API_BASE_URL
+      : credential.baseUrl !== undefined ? credential.baseUrl.trim() : current.baseUrl,
   };
   try {
     localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(map));
   } catch (error) {
     console.error('[plugin-registry] 保存插件凭据失败', error);
+    return false;
   }
   credentialVersion += 1;
   for (const listener of credentialListeners) listener();
+  return true;
 }
 
 export function hasPluginCredential(plugin: InstalledPlugin): boolean {

@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import {
   Check,
+  ChevronDown,
   Clapperboard,
   Clock,
   Layers,
@@ -188,6 +189,7 @@ function TriggerShell({
   size,
   children,
   width = 'w-60',
+  emphasis = false,
 }: {
   title: string;
   icon: LucideIcon;
@@ -195,15 +197,35 @@ function TriggerShell({
   size: 'xs' | 'sm';
   children: ReactNode;
   width?: string;
+  emphasis?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger className={cn(buttonVariants({ variant: 'outline', size }), 'gap-1')} title={title}>
-        <Icon className="h-3 w-3" />
-        <span className="shrink-0 truncate text-[11px]">{label}</span>
+      <PopoverTrigger
+        className={cn(
+          buttonVariants({ variant: 'outline', size }),
+          'gap-1',
+          emphasis && 'h-7 gap-1.5 border-primary/40 bg-primary/8 px-2 text-foreground shadow-xs hover:border-primary/60 hover:bg-primary/12',
+        )}
+        title={title}
+      >
+        {emphasis ? (
+          <>
+            <span className="text-[11px] font-semibold text-primary">模型</span>
+            <span className="h-3 w-px bg-primary/30" />
+            <span className="max-w-52 truncate text-[12px] font-semibold">{label}</span>
+            <ChevronDown className="h-3.5 w-3.5 text-primary" />
+          </>
+        ) : (
+          <>
+            <Icon className="h-3 w-3" />
+            <span className="shrink-0 truncate text-[11px]">{label}</span>
+          </>
+        )}
       </PopoverTrigger>
-      <PopoverContent className={cn(width, 'p-1')} align="start">
+      <PopoverContent className={cn(width, emphasis ? 'w-64 p-1.5' : 'p-1', width)} align="start">
+        {emphasis && <p className="px-2.5 pb-1 pt-1 text-[11px] font-semibold tracking-wide text-primary">选择模型</p>}
         <div onClick={() => setOpen(false)}>{children}</div>
       </PopoverContent>
     </Popover>
@@ -228,9 +250,11 @@ function ModelTrigger({
 
   return (
     <TriggerShell
-      title={schema.modelSelector.label || '模型'}
+      title={schema.modelSelector.label || '选择模型'}
       icon={iconFor(primary?.icon)}
       size={size}
+      emphasis
+      width="w-64"
       label={
         <>
           {family}

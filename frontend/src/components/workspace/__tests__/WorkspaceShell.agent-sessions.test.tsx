@@ -69,7 +69,7 @@ vi.mock('@/hooks/usePromptGalleryConfig', () => ({
   usePromptGalleryConfig: () => ({ mode: 'public', passwordEnabled: false }),
 }));
 vi.mock('@/hooks/useQueueStatus', () => ({ useQueueStatus: () => null }));
-vi.mock('@/hooks/useWideMode', () => ({ useWideMode: () => ({ wideMode: false, toggleWideMode: vi.fn() }) }));
+vi.mock('@/hooks/useResponsiveWorkspaceLayout', () => ({ useResponsiveWorkspaceLayout: () => ({ desktopLayout: false }) }));
 vi.mock('@/hooks/useServerTaskPolling', () => ({ useServerTaskPolling: vi.fn() }));
 vi.mock('@/hooks/useWorkspaceJobs', () => ({
   useWorkspaceJobs: () => ({
@@ -143,15 +143,19 @@ describe('WorkspaceShell Agent sessions', () => {
 
     render(<WorkspaceShell />);
     expect(await screen.findByText('agent-workspace:research')).toBeInTheDocument();
-    expect(mounts.count).toBe(1);
-    expect(mounts.lastSessionId).toBe('research');
+    await waitFor(() => {
+      expect(mounts.count).toBe(1);
+      expect(mounts.lastSessionId).toBe('research');
+    });
     calls.length = 0;
 
     fireEvent.click(screen.getByRole('button', { name: 'session:research' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'session:design' })).toBeInTheDocument());
     expect(calls).toEqual(['context:design', 'active:design']);
-    expect(mounts.count).toBe(2);
-    expect(mounts.lastSessionId).toBe('design');
+    await waitFor(() => {
+      expect(mounts.count).toBe(2);
+      expect(mounts.lastSessionId).toBe('design');
+    });
   });
 });

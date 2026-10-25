@@ -5,7 +5,6 @@ import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, use
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { WideModeToggle } from '@/components/WideModeToggle';
 import type { NovaQueueStatus } from '@/lib/ccode-task-client';
 import {
   DropdownMenu,
@@ -28,15 +27,13 @@ export interface WorkspaceHeaderRef {
 
 interface WorkspaceHeaderProps {
   queueStatus: NovaQueueStatus | null;
-  wideMode: boolean;
-  onToggleWideMode: () => void;
   onOpenSettings: () => void;
   onLogoClick?: () => void;
   sidebarMode?: boolean;
 }
 
 export const WorkspaceHeader = forwardRef<WorkspaceHeaderRef, WorkspaceHeaderProps>(function WorkspaceHeader(
-  { queueStatus, wideMode, onToggleWideMode, onOpenSettings, onLogoClick, sidebarMode = false },
+  { queueStatus, onOpenSettings, onLogoClick, sidebarMode = false },
   ref,
 ) {
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -124,9 +121,9 @@ export const WorkspaceHeader = forwardRef<WorkspaceHeaderRef, WorkspaceHeaderPro
               className="h-8 w-8 flex-shrink-0 rounded-lg object-cover ring-1 ring-border/60 sm:h-11 sm:w-11 sm:rounded-xl"
             />
           </button>
-          <div className="min-w-0 max-w-[8rem] space-y-0.5 sm:max-w-none sm:space-y-1">
-              <h1 className="truncate text-base font-semibold tracking-tight sm:text-2xl">iToo Image</h1>
-            <p className="truncate text-[10px] text-muted-foreground sm:text-sm">批量 API 图像生成器</p>
+          <div className="min-w-0 max-w-[10rem] space-y-1 sm:max-w-none">
+              <h1 className="itoo-title-brand-lg truncate max-sm:text-[1.2rem]">iToo Image</h1>
+            <p className="itoo-subtitle truncate">批量 API 图像生成器</p>
           </div>
         </div>
 
@@ -188,7 +185,6 @@ export const WorkspaceHeader = forwardRef<WorkspaceHeaderRef, WorkspaceHeaderPro
               </DropdownMenuContent>
             </DropdownMenu>
             <ThemeToggle />
-            <WideModeToggle enabled={wideMode} onToggle={onToggleWideMode} />
             <Button variant="outline" size="sm" onClick={onOpenSettings} className="gap-0 px-2 sm:gap-2 sm:px-2.5" title="设置" aria-label="设置">
               <Settings className="w-4 h-4" />
               <span className="hidden sm:inline">设置</span>

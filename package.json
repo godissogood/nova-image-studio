@@ -10,6 +10,7 @@
     "dev:old": "cd ../backend && cross-env NODE_ENV=production node server.js",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",
+    "dev:local": "cd backend && cross-env NODE_ENV=development HOSTNAME=127.0.0.1 node server.js",
     "build": "cd frontend && npm run build",
     "start": "cd backend && node server.js",
     "lint": "cd frontend && npm run lint && cd ../backend && npm run lint",

@@ -590,12 +590,14 @@ export function AgentChatWorkspace({
     && lastMessageRole !== 'context-divider';
   const canClearContext = !busy && hasContextToClear;
 
-  return (
+  const chatPanel = (
     <div
       ref={containerRef}
       className={cn(
-        'relative flex h-full min-w-0 flex-1 min-h-[400px] flex-col rounded-2xl border border-border bg-card/60 overflow-hidden',
-        wideMode && 'h-full min-h-0 w-full'
+        'relative flex h-full min-w-0 flex-1 min-h-[400px] flex-col overflow-hidden',
+        wideMode
+          ? 'itoo-agent-panel itoo-agent-panel-chat min-h-0'
+          : 'itoo-agent-chat-surface rounded-[1.35rem] border border-border/70'
       )}
       onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
       onDragLeave={() => setIsDragOver(false)}
@@ -605,8 +607,11 @@ export function AgentChatWorkspace({
         void handleFiles(e.dataTransfer.files);
       }}
     >
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border px-4 py-2.5">
-        <div className="flex shrink-0 items-center gap-2 text-sm font-medium">
+      <div className={cn(
+        'flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-3',
+        wideMode ? 'itoo-agent-panel-header border-b-0' : 'border-b border-border'
+      )}>
+        <div className="flex shrink-0 items-center gap-2">
           {onToggleSidebar && (
             <button
               type="button"
@@ -618,14 +623,14 @@ export function AgentChatWorkspace({
               <PanelLeft className="h-4 w-4 text-primary" />
             </button>
           )}
-          <Bot className="h-4 w-4 text-primary" />
-          Agent
+          <Bot className="h-4.5 w-4.5 text-primary" />
+          <span className="itoo-agent-panel-title text-[1.02rem]">Agent</span>
         </div>
-        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1 max-sm:w-full">
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-sm:w-full">
           <Button
-            variant="ghost"
-            size="xs"
-            className="gap-1 text-muted-foreground"
+            variant="soft"
+            size="sm"
+            className="gap-1.5 rounded-full px-3"
             onClick={() => agent.clearContext()}
             disabled={!canClearContext}
             title="保留聊天记录，但让助手忘掉上文，开始一段干净对话"
@@ -639,9 +644,9 @@ export function AgentChatWorkspace({
             onRedescribe={agent.redescribeImage}
           />
           <Button
-            variant="ghost"
-            size="xs"
-            className="gap-1 text-muted-foreground"
+            variant="soft"
+            size="sm"
+            className="gap-1.5 rounded-full px-3 text-destructive border-destructive/25 hover:bg-destructive/8 hover:border-destructive/40 hover:text-destructive"
             onClick={() => setClearDialogOpen(true)}
             disabled={agent.messages.length === 0 && agent.images.length === 0}
           >
@@ -653,13 +658,15 @@ export function AgentChatWorkspace({
 
       <div
         ref={scrollRef}
-        className="min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-4 py-4"
+        className="itoo-agent-chat-scroll min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-4 py-4"
       >
         {agent.messages.length === 0 && !agent.streamingText && (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
-            <Sparkles className="h-8 w-8 opacity-40" />
-            <p className="text-sm">和我聊聊你想画什么，或上传图片让我帮你修改。</p>
-            <p className="text-xs opacity-70">我会判断你的意图，并在生成前请你确认。</p>
+          <div className="flex h-full flex-col items-center justify-center gap-3.5 px-6 text-center">
+            <div className="itoo-agent-empty-orb mb-1">
+              <Sparkles className="h-7 w-7" />
+            </div>
+            <p className="itoo-empty-title max-w-md">和我聊聊你想画什么，或上传图片让我帮你修改。</p>
+            <p className="itoo-empty-desc">我会判断你的意图，并在生成前请你确认。</p>
           </div>
         )}
 
@@ -695,7 +702,7 @@ export function AgentChatWorkspace({
             </div>
             <div className="flex max-w-[80%] flex-col gap-2">
               {(agent.streamingReasoning || (agent.phase === 'streaming' && !agent.streamingText)) && (
-                <div className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                <div className="itoo-agent-msg-surface-muted rounded-xl border border-border/60 px-3 py-2 text-xs text-muted-foreground">
                   <div className="mb-1 flex items-center gap-1.5 font-medium">
                     <Brain className="h-3.5 w-3.5" />
                     思考中
@@ -709,7 +716,7 @@ export function AgentChatWorkspace({
               )}
               {agent.streamingText && (
                 <div
-                  className="md-streaming rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2.5 text-sm"
+                  className="itoo-agent-msg-surface md-streaming rounded-2xl rounded-tl-sm border border-border/70 px-3.5 py-2.5 text-sm"
                   onClick={(e) => {
                     if (!handleMarkdownCodeCopyButtonClick(e.target)) return;
                     e.preventDefault();
@@ -837,7 +844,7 @@ export function AgentChatWorkspace({
         </div>
       )}
 
-      <div className="border-t border-border p-3 pt-2">
+      <div className={cn('p-3 pt-2', wideMode ? 'itoo-agent-input-shell' : 'border-t border-border')}>
         {uploads.length > 0 && (
           <div className="mb-2">
             <AttachmentChips
@@ -849,7 +856,7 @@ export function AgentChatWorkspace({
           </div>
         )}
         <div className={cn(
-          'flex items-center gap-2 rounded-xl border bg-background px-2 py-1.5 transition-colors',
+          'flex items-center gap-2 rounded-xl border bg-background/90 px-2 py-1.5 transition-colors shadow-sm',
           isDragOver ? 'border-primary ring-2 ring-primary/20' : 'border-input'
         )}>
           <input
@@ -1209,7 +1216,11 @@ export function AgentChatWorkspace({
           )}
         </div>
       </div>
+    </div>
+  );
 
+  const overlays = (
+    <>
       <MissingApiKeyDialog
         open={missingApiKeyDialogOpen}
         onOpenChange={setMissingApiKeyDialogOpen}
@@ -1348,6 +1359,13 @@ export function AgentChatWorkspace({
         onOpenChange={setCustomSizeDialogOpen}
         onApply={size => setUserCustomSize(size)}
       />
+    </>
+  );
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {chatPanel}
+      {overlays}
     </div>
   );
 }

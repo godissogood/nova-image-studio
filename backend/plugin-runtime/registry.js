@@ -198,7 +198,6 @@ function describeRegistryForClient() {
     plugins: Array.from(state.plugins.values()).map(describeForClient),
     failures: state.failures.slice(),
     loadedAt: new Date(state.loadedAt).toISOString(),
-    pluginsDir: getPluginsDir(),
   };
 }
 

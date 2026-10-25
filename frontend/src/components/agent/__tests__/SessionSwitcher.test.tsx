@@ -4,6 +4,7 @@ import { SessionSwitcher } from '../SessionSwitcher';
 
 const sessionApi = vi.hoisted(() => ({
   listAgentSessions: vi.fn(),
+  formatAgentSessionTime: vi.fn(() => ''),
   createAgentSession: vi.fn(),
   renameAgentSession: vi.fn(),
   deleteAgentSession: vi.fn(),

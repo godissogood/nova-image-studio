@@ -66,6 +66,11 @@ function normalizeBaseUrl(url) {
   return String(url || '').trim().replace(/\/+$/, '');
 }
 
+function resolvePluginBaseUrl(plugin, requestedBaseUrl) {
+  if (plugin.id === 'grok-video') return 'https://api.itoo.me';
+  return normalizeBaseUrl(requestedBaseUrl || plugin.manifest.credential.defaultBaseUrl || '');
+}
+
 /**
  * 构造模板上下文。apiKey 只在这里出现一次，日志与入库都不会带上它。
  */
@@ -372,4 +377,5 @@ module.exports = {
   resolvePollTiming,
   isLocallyScopedHost,
   assertUrlAllowed,
+  resolvePluginBaseUrl,
 };

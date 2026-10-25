@@ -33,7 +33,15 @@ function applyTheme(newTheme: Theme) {
   }
 }
 
-export function ThemeToggle() {
+export function ThemeToggle({
+  className,
+  triggerClassName,
+  emphasize = false,
+}: {
+  className?: string;
+  triggerClassName?: string;
+  emphasize?: boolean;
+} = {}) {
   const [theme, setTheme] = useState<Theme>('system');
   const [mounted, setMounted] = useState(false);
 
@@ -72,7 +80,7 @@ export function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <Button variant="outline" size="icon" aria-label="切换主题">
+      <Button variant="outline" size="icon" className={className} aria-label="切换主题">
         <div className="w-5 h-5" />
       </Button>
     );
@@ -84,12 +92,24 @@ export function ThemeToggle() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-0 px-2 sm:gap-2 sm:px-3")}
+        className={cn(
+          buttonVariants({ variant: "outline", size: "sm" }),
+          "gap-0 px-2 sm:gap-2 sm:px-3 text-foreground/80",
+          emphasize && "itoo-sidebar-action itoo-sidebar-action-theme",
+          triggerClassName,
+          className
+        )}
         title={`主题：${currentOption.label}`}
         aria-label="切换主题"
       >
-        <CurrentIcon className="size-4" />
-        <span className="hidden sm:inline">{currentOption.label}</span>
+        {emphasize ? (
+          <span className="itoo-sidebar-action-icon" aria-hidden>
+            <CurrentIcon className="size-3.5" />
+          </span>
+        ) : (
+          <CurrentIcon className="size-4 opacity-80" />
+        )}
+        <span className={cn("font-medium", !emphasize && "hidden sm:inline")}>{currentOption.label}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
         <DropdownMenuRadioGroup value={theme} onValueChange={selectTheme}>

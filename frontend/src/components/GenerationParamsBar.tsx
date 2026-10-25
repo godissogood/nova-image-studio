@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, Copy, Maximize, RectangleHorizontal, Sparkles, Thermometer } from 'lucide-react';
+import { Check, ChevronDown, Copy, Maximize, RectangleHorizontal, Thermometer } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -123,11 +123,20 @@ export function GenerationParamsBar({ value, onChange, size = 'xs', className }:
     <div className={cn('flex flex-wrap items-center gap-1.5', className)}>
       {/* 模型选择 */}
       <Popover modal={false} open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
-        <PopoverTrigger className={cn(buttonVariants({ variant: 'outline', size }), 'gap-1')} title="模型选择">
-          <Sparkles className="h-3 w-3" />
-          <span className="shrink-0 truncate text-[11px]">{MODEL_OPTIONS.find(o => o.value === model)?.label}</span>
+        <PopoverTrigger
+          className={cn(
+            buttonVariants({ variant: 'outline', size }),
+            'h-7 gap-1.5 border-primary/40 bg-primary/8 px-2 text-foreground shadow-xs hover:border-primary/60 hover:bg-primary/12'
+          )}
+          title="选择模型"
+        >
+          <span className="text-[11px] font-semibold text-primary">模型</span>
+          <span className="h-3 w-px bg-primary/30" />
+          <span className="max-w-36 truncate text-[12px] font-semibold">{MODEL_OPTIONS.find(o => o.value === model)?.label}</span>
+          <ChevronDown className="h-3.5 w-3.5 text-primary" />
         </PopoverTrigger>
-        <PopoverContent className="w-48 p-1" align="start">
+        <PopoverContent className="w-56 p-1.5" align="start">
+          <p className="px-2.5 pb-1 pt-1 text-[11px] font-semibold tracking-wide text-primary">选择模型</p>
           {MODEL_OPTIONS.map((option) => (
             <button
               key={option.value}
@@ -135,9 +144,13 @@ export function GenerationParamsBar({ value, onChange, size = 'xs', className }:
                 handleModelChange(option.value);
                 setTimeout(() => setModelPopoverOpen(false), 0);
               }}
-              className={cn('w-full text-left px-2.5 py-1.5 rounded-md text-sm hover:bg-muted', model === option.value && 'bg-muted font-medium')}
+              className={cn(
+                'flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted',
+                model === option.value && 'bg-primary/10 font-semibold text-primary'
+              )}
             >
-              {option.label}
+              <span>{option.label}</span>
+              {model === option.value && <Check className="h-3.5 w-3.5" />}
             </button>
           ))}
         </PopoverContent>

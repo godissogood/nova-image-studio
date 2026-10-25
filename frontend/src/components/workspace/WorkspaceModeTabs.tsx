@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 interface WorkspaceModeTabsProps {
   wideMode?: boolean;
   showPromptGallery?: boolean;
+  activeTab?: string;
 }
 
 const tabs = [
@@ -24,7 +25,7 @@ const tabs = [
 
 const galleryTab = { value: 'prompt-gallery', icon: LibraryBig, label: '提示词广场' } as const;
 
-export function WorkspaceModeTabs({ wideMode = false, showPromptGallery = false }: WorkspaceModeTabsProps) {
+export function WorkspaceModeTabs({ wideMode = false, showPromptGallery = false, activeTab }: WorkspaceModeTabsProps) {
   const gridCols = showPromptGallery ? 'sm:grid-cols-9' : 'sm:grid-cols-8';
   const allTabs = showPromptGallery ? [...tabs, galleryTab] : tabs;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -116,20 +117,20 @@ export function WorkspaceModeTabs({ wideMode = false, showPromptGallery = false 
     if (activeEl) {
       activeEl.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
     }
-  }, [isCompact]);
+  }, [activeTab, isCompact]);
 
   if (wideMode) {
     // 宽屏 → 垂直气泡侧边栏
     return (
-      <TabsList className="itoo-mode-tabs itoo-mode-tabs-vertical w-full flex-col gap-1.5 rounded-2xl border border-border bg-muted/50 p-2">
+      <TabsList className="itoo-mode-tabs itoo-mode-tabs-vertical w-full flex-col rounded-none border-0 bg-transparent p-0 shadow-none">
         {allTabs.map(({ value, icon: Icon, label }) => (
           <TabsTrigger
             key={value}
             value={value}
-            className="flex flex-row items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-medium data-active:bg-card data-active:text-foreground data-active:shadow-sm"
+            className="flex flex-row items-center"
           >
-            <Icon className="size-5 shrink-0" />
-            <span>{label}</span>
+            <Icon className="shrink-0" />
+            <span className="truncate">{label}</span>
           </TabsTrigger>
         ))}
       </TabsList>

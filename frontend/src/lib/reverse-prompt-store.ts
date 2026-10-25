@@ -12,16 +12,21 @@ export interface StoredReverseResult {
   timestamp: number;
 }
 
+export type StoredReverseDraftFile = {
+  id: string;
+  name: string;
+  preview: string;
+  dataUrl: string;
+  mimeType: string;
+  badge?: string;
+};
+
 export interface StoredReverseDraft {
   slot: 'draft';
-  file: {
-    id: string;
-    name: string;
-    preview: string;
-    dataUrl: string;
-    mimeType: string;
-    badge?: string;
-  } | null;
+  /** 兼容旧版单图草稿 */
+  file: StoredReverseDraftFile | null;
+  /** 多图草稿（优先） */
+  files?: StoredReverseDraftFile[];
   timestamp: number;
 }
 
@@ -122,17 +127,34 @@ export async function clearReverseResult(slot: 'current' | 'previous'): Promise<
   });
 }
 
-/** 保存当前输入图草稿 */
-export async function saveReverseDraft(file: StoredReverseDraft['file']): Promise<void> {
+/** 保存当前输入图草稿（支持多图；file 保留为首张兼容旧读取） */
+export async function saveReverseDraft(
+  fileOrFiles: StoredReverseDraft['file'] | StoredReverseDraftFile[],
+): Promise<void> {
   const db = await openReverseDB();
   if (!db) return;
 
+  const files = Array.isArray(fileOrFiles)
+    ? fileOrFiles
+    : fileOrFiles
+      ? [fileOrFiles]
+      : [];
+  const file = files[0] ?? null;
+
   return new Promise((resolve) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put({ slot: 'draft', file, timestamp: Date.now() });
+    tx.objectStore(STORE_NAME).put({ slot: 'draft', file, files, timestamp: Date.now() });
     tx.oncomplete = () => resolve();
     tx.onerror = () => resolve();
   });
+}
+
+/** 从草稿记录解析文件列表（兼容仅有 file 的旧数据） */
+export function resolveReverseDraftFiles(draft: StoredReverseDraft | null | undefined): StoredReverseDraftFile[] {
+  if (!draft) return [];
+  if (Array.isArray(draft.files) && draft.files.length > 0) return draft.files;
+  if (draft.file) return [draft.file];
+  return [];
 }
 
 /** 清除当前输入图草稿 */

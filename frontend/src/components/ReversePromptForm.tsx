@@ -1,23 +1,25 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowUp,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CloudUpload,
   Copy,
   Info,
   Loader2,
   ScanSearch,
-  Sparkles,
   Square,
   X,
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { AttachmentChips } from '@/components/AttachmentChips';
+import { HistoryImagePreview } from '@/components/workspace/results/HistoryImagePreview';
+import { ImageHoverActions } from '@/components/workspace/results/ImageHoverActions';
 import { MissingApiKeyDialog } from '@/components/MissingApiKeyDialog';
 import { cn } from '@/lib/utils';
 import { prepareUploadImage } from '@/lib/upload-image-cache';
@@ -38,14 +40,19 @@ import { getConfiguredTextModel } from '@/lib/model-endpoints';
 import {
   clearReverseDraft,
   loadReverseResults,
+  resolveReverseDraftFiles,
   saveReverseDraft,
   saveReverseResult,
 } from '@/lib/reverse-prompt-store';
+import type { ImageActionPayload } from '@/lib/image-actions';
 
 import { MAX_UPLOAD_SIZE_BYTES } from '@/lib/constants';
 import { loadJsonFromStorage, saveJsonToStorage } from '@/lib/settings-storage';
 
 const REVERSE_SETTINGS_KEY = 'nova-reverse-prompt-settings';
+/** 缩略图区：2 行 × 3 列 = 6；第 7 张起左右翻页 */
+const THUMB_PAGE_SIZE = 6;
+const MAX_REVERSE_IMAGES = 30;
 
 interface ReverseSettings {
   model: ReversePromptModelId;
@@ -87,7 +94,9 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
   const [mode, setMode] = useState<ReversePromptMode>(DEFAULT_REVERSE_MODE);
   const [settingsReady, setSettingsReady] = useState(false);
 
-  const [pendingFile, setPendingFile] = useState<UploadedFile | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([]);
+  const [thumbPageIndex, setThumbPageIndex] = useState(0);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -105,6 +114,16 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
 
   const streamHandleRef = useRef<StreamReverseHandle | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const thumbPageCount = Math.max(1, Math.ceil(pendingFiles.length / THUMB_PAGE_SIZE));
+  const safeThumbPage = Math.min(thumbPageIndex, thumbPageCount - 1);
+  const pageThumbs = useMemo(
+    () => pendingFiles.slice(safeThumbPage * THUMB_PAGE_SIZE, safeThumbPage * THUMB_PAGE_SIZE + THUMB_PAGE_SIZE),
+    [pendingFiles, safeThumbPage],
+  );
+  const showThumbPager = pendingFiles.length > THUMB_PAGE_SIZE;
+  const primaryFile = pendingFiles[0] ?? null;
 
   // 挂载后恢复缓存设置 + 从 IndexedDB 恢复反推结果
   useEffect(() => {
@@ -145,8 +164,9 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
           aborted: stored.previous.aborted,
         });
       }
-      if (stored.draft?.file) {
-        setPendingFile(stored.draft.file);
+      const draftFiles = resolveReverseDraftFiles(stored.draft);
+      if (draftFiles.length > 0) {
+        setPendingFiles(draftFiles);
       }
     });
     });
@@ -176,29 +196,53 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
       setUploadError('请选择图像文件');
       return;
     }
-    // 只取第一张
-    const file = arr[0];
 
     setUploading(true);
     setUploadError(null);
     try {
-      const optimized = await prepareUploadImage(file);
-      if (optimized.processedSize > MAX_UPLOAD_SIZE_BYTES) {
-        setUploadError(`文件过大: ${file.name}，压缩后仍超过 10MB`);
-        return;
+      const prepared: UploadedFile[] = [];
+      let lastError: string | null = null;
+      for (const file of arr) {
+        try {
+          const optimized = await prepareUploadImage(file);
+          if (optimized.processedSize > MAX_UPLOAD_SIZE_BYTES) {
+            lastError = `文件过大: ${file.name}，压缩后仍超过 10MB`;
+            continue;
+          }
+          prepared.push({
+            id: optimized.id,
+            name: optimized.name,
+            preview: optimized.preview,
+            dataUrl: optimized.dataUrl,
+            mimeType: optimized.mimeType,
+            badge: getOptimizationBadge(optimized.originalSize, optimized.processedSize, optimized.cacheHit),
+          });
+        } catch {
+          lastError = `文件读取失败: ${file.name}`;
+        }
       }
-      const nextFile = {
-        id: optimized.id,
-        name: optimized.name,
-        preview: optimized.preview,
-        dataUrl: optimized.dataUrl,
-        mimeType: optimized.mimeType,
-        badge: getOptimizationBadge(optimized.originalSize, optimized.processedSize, optimized.cacheHit),
-      };
-      setPendingFile(nextFile);
-      void saveReverseDraft(nextFile);
-    } catch {
-      setUploadError('文件读取失败');
+
+      let overflow = false;
+      let nextList: UploadedFile[] = [];
+      setPendingFiles((prev) => {
+        nextList = [...prev];
+        for (const item of prepared) {
+          if (nextList.length >= MAX_REVERSE_IMAGES) {
+            overflow = true;
+            break;
+          }
+          if (nextList.some((existing) => existing.id === item.id)) continue;
+          nextList.push(item);
+        }
+        return nextList;
+      });
+      void saveReverseDraft(nextList);
+      setThumbPageIndex(Math.max(0, Math.ceil(Math.max(nextList.length, 1) / THUMB_PAGE_SIZE) - 1));
+      if (overflow) {
+        setUploadError(`最多上传 ${MAX_REVERSE_IMAGES} 张，已添加可容纳的图片`);
+      } else if (lastError) {
+        setUploadError(lastError);
+      }
     } finally {
       setUploading(false);
     }
@@ -226,10 +270,23 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
     }
   };
 
-  const handleRemoveFile = useCallback(() => {
-    setPendingFile(null);
-    void clearReverseDraft();
+  const handleRemoveFile = useCallback((id: string) => {
+    setPendingFiles((prev) => {
+      const next = prev.filter((file) => file.id !== id);
+      if (next.length === 0) void clearReverseDraft();
+      else void saveReverseDraft(next);
+      return next;
+    });
+    setPreviewIndex(null);
   }, []);
+
+  const handleClearDraft = () => {
+    setPendingFiles([]);
+    setThumbPageIndex(0);
+    setPreviewIndex(null);
+    setUploadError(null);
+    void clearReverseDraft();
+  };
 
   // 粘贴图片支持
   useEffect(() => {
@@ -257,7 +314,7 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
   }, [disabled, uploading, streaming, processFiles]);
 
   const handleSubmit = () => {
-    if (!pendingFile || streaming || disabled) return;
+    if (!primaryFile || streaming || disabled) return;
     const configuredModel = getConfiguredTextModel(model);
     if (!configuredModel?.apiKey || !configuredModel.baseUrl || !configuredModel.modelId) {
       setMissingApiKeyDialogOpen(true);
@@ -290,8 +347,8 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
         apiKey: configuredModel.apiKey,
         model: configuredModel.id,
         mode,
-        imageDataUrl: pendingFile.dataUrl,
-        mimeType: pendingFile.mimeType,
+        imageDataUrl: primaryFile.dataUrl,
+        mimeType: primaryFile.mimeType,
       },
       {
         onDelta: (token) => {
@@ -373,29 +430,43 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
     }
   };
 
-  const handleClearDraft = () => {
-    setPendingFile(null);
-    setUploadError(null);
-    void clearReverseDraft();
-  };
-
-  const canSubmit = !!pendingFile && !disabled && !uploading && !streaming;
+  const canSubmit = !!primaryFile && !disabled && !uploading && !streaming;
   const reverseModelOptions = getReversePromptModelOptionsList();
   const modelLabel = getReverseModelOption(model).label;
   const modeOption = getReverseModeOption(mode);
+
+  const previewImages = pendingFiles.map((file) => file.preview).filter(Boolean);
+  const previewPayloads = pendingFiles.map<ImageActionPayload>((file) => ({
+    id: file.id,
+    name: file.name,
+    dataUrl: file.dataUrl || file.preview,
+    src: file.preview,
+    mimeType: file.mimeType,
+    sourceKind: 'reverse-prompt',
+    sourceLabel: '反推提示词上传图',
+    sourceRef: file.id,
+  }));
+  const currentPreview = previewIndex === null ? null : pendingFiles[previewIndex]?.preview;
+  const currentPreviewImageIndex = currentPreview ? previewImages.indexOf(currentPreview) : -1;
 
   return (
     <div
       ref={formRef}
       className={cn(
         'space-y-4',
-        wideMode && !disabled && 'xl:grid xl:grid-cols-[minmax(400px,0.8fr)_minmax(0,1.2fr)] xl:gap-5 xl:space-y-0 xl:items-start'
+        wideMode && 'grid min-h-0 flex-1 items-stretch gap-5 xl:grid-cols-[minmax(400px,0.85fr)_minmax(0,1.25fr)] xl:space-y-0'
       )}
     >
-      <div className={cn('space-y-4', wideMode && !disabled && 'xl:sticky xl:top-4')}>
-      <div className="bg-muted/50 border border-border rounded-xl shadow-md">
+      <div className={cn(wideMode && 'flex min-h-0 h-full flex-col')}>
+      <div className={cn(
+        'rounded-xl border border-border bg-muted/50 shadow-md',
+        wideMode && 'flex min-h-0 flex-1 flex-col overflow-hidden'
+      )}>
         {disabled ? (
-          <div className="flex min-h-40 flex-col items-center justify-center gap-4 px-4 py-8 text-center">
+          <div className={cn(
+            'flex flex-col items-center justify-center gap-4 px-4 py-8 text-center',
+            wideMode ? 'min-h-0 flex-1' : 'min-h-40'
+          )}>
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
               <Info className="h-5 w-5" />
             </div>
@@ -408,65 +479,149 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
             <Button onClick={() => setMissingApiKeyDialogOpen(true)}>配置</Button>
           </div>
         ) : (
-          <>
-            {/* 上传区 */}
-            <div className="p-4">
+          <div className={cn('flex flex-col', wideMode && 'min-h-0 flex-1')}>
+            {/* 紧凑上传区 */}
+            <div className="shrink-0 p-4 pb-2">
               <div
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
+                onClick={() => fileInputRef.current?.click()}
                 className={cn(
-                  'relative border-2 border-dashed rounded-xl px-6 py-10 text-center transition-all overflow-hidden',
+                  'relative cursor-pointer overflow-hidden rounded-xl border-2 border-dashed px-4 py-5 text-center transition-all',
                   isDragOver
                     ? 'border-primary bg-primary/20'
-                    : 'bg-primary/5 border-primary/30 hover:bg-primary/10 hover:border-primary/50 cursor-pointer'
+                    : 'border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10'
                 )}
               >
                 <input
+                  ref={fileInputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   onChange={handleFileSelect}
                   disabled={uploading || streaming}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed overflow-hidden"
-                  style={{ fontSize: 0 }}
+                  className="hidden"
                 />
-                <CloudUpload className={cn('w-6 h-6 mx-auto mb-1', isDragOver ? 'text-primary' : 'text-muted-foreground')} />
+                <CloudUpload className={cn('mx-auto mb-1 h-5 w-5', isDragOver ? 'text-primary' : 'text-muted-foreground')} />
                 <p className="text-sm font-medium">
                   {uploading ? '读取中...' : isDragOver ? '将图像拖放到这里' : '拖放参考图到此处'}
                 </p>
-                <p className="text-xs text-muted-foreground">点击选择 · 拖放 · Ctrl+V 粘贴 · 仅支持单张</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {pendingFile ? '已上传 1 / 1 张（再次选择会替换）' : '0 / 1 张'}
+                <p className="text-xs text-muted-foreground">点击选择 · 拖放 · Ctrl+V 粘贴 · 可多张</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  已上传 {pendingFiles.length} / {MAX_REVERSE_IMAGES} 张
                 </p>
               </div>
             </div>
 
-            {pendingFile && (
-              <div className="px-4 pb-2">
-                <AttachmentChips
-                  files={[pendingFile]}
-                  onRemove={handleRemoveFile}
-                  sourceKind="reverse-prompt"
-                  sourceLabel="反推提示词上传图"
-                  showDownload={false}
-                  showCopy
-                  showUseAsReference={false}
-                />
-              </div>
-            )}
+            {/* 缩略图：最多 2 行 × 3 列，第 7 张起左右翻页 */}
+            <div className={cn('flex min-h-0 flex-col px-4 pb-2', wideMode && 'flex-1')}>
+              {pendingFiles.length === 0 ? (
+                <div className={cn(
+                  'grid place-items-center rounded-xl border border-dashed border-border/70 bg-background/40 text-xs text-muted-foreground',
+                  wideMode ? 'min-h-0 flex-1' : 'min-h-36'
+                )}>
+                  上传后的图片会出现在这里
+                </div>
+              ) : (
+                <div className={cn('relative min-h-0', wideMode && 'flex flex-1 flex-col')}>
+                  <div className={cn('grid grid-cols-3 gap-2 content-start', wideMode && 'min-h-0 flex-1')}>
+                    {pageThumbs.map((file, localIndex) => {
+                      const absoluteIndex = safeThumbPage * THUMB_PAGE_SIZE + localIndex;
+                      return (
+                        <div key={file.id} className="group relative aspect-square overflow-hidden rounded-xl border border-border bg-muted">
+                          <button
+                            type="button"
+                            className="absolute inset-0"
+                            onClick={() => setPreviewIndex(absoluteIndex)}
+                            aria-label={`预览 ${file.name}`}
+                          >
+                            <img src={file.preview} alt={file.name} className="size-full object-cover" />
+                          </button>
+                          <button
+                            type="button"
+                            className="absolute top-1.5 right-1.5 z-10 flex size-6 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow-sm opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRemoveFile(file.id);
+                            }}
+                            aria-label={`移除 ${file.name}`}
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                          {file.badge && (
+                            <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-md bg-background/85 px-1.5 py-0.5 text-[10px] text-muted-foreground shadow-sm">
+                              {file.badge}
+                            </span>
+                          )}
+                          {file.preview && (
+                            <ImageHoverActions
+                              payload={previewPayloads[absoluteIndex]}
+                              onPreview={() => setPreviewIndex(absoluteIndex)}
+                              compact
+                              showDownload={false}
+                              showCopy
+                              showAddToAssets
+                              showUseAsReference={false}
+                              className="rounded-xl"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
 
-            {/* 控件栏 */}
-            <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3 pt-1">
+                  {showThumbPager && (
+                    <div className="mt-2 flex shrink-0 items-center justify-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-8 rounded-full"
+                        disabled={safeThumbPage <= 0}
+                        aria-label="上一页图片"
+                        onClick={() => setThumbPageIndex((current) => Math.max(0, current - 1))}
+                      >
+                        <ChevronLeft className="size-4" />
+                      </Button>
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {safeThumbPage + 1}/{thumbPageCount} · {pendingFiles.length}张
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-8 rounded-full"
+                        disabled={safeThumbPage >= thumbPageCount - 1}
+                        aria-label="下一页图片"
+                        onClick={() => setThumbPageIndex((current) => Math.min(thumbPageCount - 1, current + 1))}
+                      >
+                        <ChevronRight className="size-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 控件栏：模型 / 模式带标签提示，对齐视频创作 */}
+            <div className="mt-auto flex shrink-0 flex-wrap items-center gap-1.5 border-t border-border/80 px-4 py-3">
               {/* 模型选择 */}
               <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
                 <PopoverTrigger
-                  className={cn(buttonVariants({ variant: 'outline', size: 'xs' }), 'gap-1')}
+                  className={cn(
+                    buttonVariants({ variant: 'outline', size: 'xs' }),
+                    'h-7 gap-1.5 border-primary/40 bg-primary/8 px-2 text-foreground shadow-xs hover:border-primary/60 hover:bg-primary/12'
+                  )}
                   title="模型选择"
                 >
-                  <Sparkles className="h-3 w-3" />
-                  <span className="shrink-0 truncate text-[11px]">{modelLabel}</span>
+                  <span className="text-[11px] font-semibold text-primary">模型</span>
+                  <span className="h-3 w-px bg-primary/30" />
+                  <span className="max-w-40 truncate text-[12px] font-semibold">{modelLabel}</span>
+                  <ChevronDown className="h-3.5 w-3.5 text-primary" />
                 </PopoverTrigger>
-                <PopoverContent className="w-48 p-1" align="start">
+                <PopoverContent className="w-64 p-1.5" align="start">
+                  <p className="px-2.5 pb-1 pt-1 text-[11px] font-semibold tracking-wide text-primary">选择模型</p>
                   {reverseModelOptions.map((option) => (
                     <button
                       key={option.value}
@@ -475,12 +630,12 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
                         setTimeout(() => setModelPopoverOpen(false), 0);
                       }}
                       className={cn(
-                        'w-full text-left px-2.5 py-1.5 rounded-md text-sm hover:bg-muted',
+                        'w-full rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-muted',
                         model === option.value && 'bg-muted font-medium'
                       )}
                     >
                       <div>{option.label}</div>
-                      <div className={cn('text-[11px] mt-0.5', model === option.value ? 'opacity-90' : 'opacity-70')}>
+                      <div className={cn('mt-0.5 text-[11px]', model === option.value ? 'opacity-90' : 'opacity-70')}>
                         {option.description}
                       </div>
                     </button>
@@ -491,13 +646,19 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
               {/* 模式选择 */}
               <Popover open={modePopoverOpen} onOpenChange={setModePopoverOpen}>
                 <PopoverTrigger
-                  className={cn(buttonVariants({ variant: 'outline', size: 'xs' }), 'gap-1')}
+                  className={cn(
+                    buttonVariants({ variant: 'outline', size: 'xs' }),
+                    'h-7 gap-1.5 border-primary/40 bg-primary/8 px-2 text-foreground shadow-xs hover:border-primary/60 hover:bg-primary/12'
+                  )}
                   title="反推模式"
                 >
-                  <ScanSearch className="h-3 w-3" />
-                  <span className="shrink-0 truncate text-[11px]">{modeOption.label}</span>
+                  <span className="text-[11px] font-semibold text-primary">模式</span>
+                  <span className="h-3 w-px bg-primary/30" />
+                  <span className="max-w-40 truncate text-[12px] font-semibold">{modeOption.label}</span>
+                  <ChevronDown className="h-3.5 w-3.5 text-primary" />
                 </PopoverTrigger>
-                <PopoverContent className="w-48 p-1" align="start">
+                <PopoverContent className="w-64 p-1.5" align="start">
+                  <p className="px-2.5 pb-1 pt-1 text-[11px] font-semibold tracking-wide text-primary">选择模式</p>
                   {REVERSE_PROMPT_MODE_OPTIONS.map((option) => (
                     <button
                       key={option.value}
@@ -506,12 +667,12 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
                         setTimeout(() => setModePopoverOpen(false), 0);
                       }}
                       className={cn(
-                        'w-full text-left px-2.5 py-1.5 rounded-md text-sm hover:bg-muted',
+                        'w-full rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-muted',
                         mode === option.value && 'bg-muted font-medium'
                       )}
                     >
                       <div>{option.label}</div>
-                      <div className={cn('text-[11px] mt-0.5', mode === option.value ? 'opacity-90' : 'opacity-70')}>
+                      <div className={cn('mt-0.5 text-[11px]', mode === option.value ? 'opacity-90' : 'opacity-70')}>
                         {option.description}
                       </div>
                     </button>
@@ -524,7 +685,7 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
                   variant="outline"
                   size="icon"
                   onClick={handleClearDraft}
-                  disabled={disabled || (!pendingFile && !uploadError)}
+                  disabled={disabled || (pendingFiles.length === 0 && !uploadError)}
                   title="清空已上传图片"
                 >
                   <X className="w-5 h-5" />
@@ -550,22 +711,41 @@ export function ReversePromptForm({ wideMode = false, disabled = false, onConfig
                 )}
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 
-      {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {uploadError && <p className="mt-2 text-sm text-destructive">{uploadError}</p>}
+      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>
+
+      {previewIndex !== null && currentPreviewImageIndex >= 0 && typeof document !== 'undefined' && createPortal(
+        <HistoryImagePreview
+          images={previewImages}
+          alt={pendingFiles[previewIndex]?.name || '参考图像'}
+          initialIndex={currentPreviewImageIndex}
+          onClose={() => setPreviewIndex(null)}
+          onIndexChange={(nextIndex) => {
+            const nextFileIndex = pendingFiles.findIndex((file) => file.preview === previewImages[nextIndex]);
+            if (nextFileIndex >= 0) setPreviewIndex(nextFileIndex);
+          }}
+          actionPayloads={previewPayloads}
+          showDownload={false}
+          showCopy
+          showAddToAssets
+          showUseAsReference={false}
+        />,
+        document.body
+      )}
 
       <div
         className={cn(
           'space-y-4',
-          wideMode && !disabled && 'xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pr-1'
+          wideMode && 'flex min-h-0 h-full flex-col overflow-y-auto pr-1'
         )}
       >
       {wideMode && !disabled && !currentResult && !previousResult && (
-        <div className="flex min-h-60 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card/40 p-8 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card/40 p-8 text-center">
           <ScanSearch className="h-7 w-7 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">反推结果会显示在这里</p>
         </div>

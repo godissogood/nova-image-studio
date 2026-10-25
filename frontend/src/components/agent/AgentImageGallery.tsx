@@ -196,9 +196,9 @@ export function AgentImageGallery({ images, sessionId, onRedescribe }: AgentImag
   return (
     <>
       <Button
-        variant="ghost"
-        size="xs"
-        className="gap-1 text-muted-foreground"
+        variant="soft"
+        size="sm"
+        className="gap-1.5 rounded-full px-3"
         disabled={images.length === 0}
         onClick={() => setOpen(true)}
         title="查看当前对话的所有图片"
@@ -206,7 +206,7 @@ export function AgentImageGallery({ images, sessionId, onRedescribe }: AgentImag
         <ImageIcon className="h-3.5 w-3.5" />
         此对话包含的图片
         {images.length > 0 && (
-          <span className="ml-0.5 rounded-full bg-muted-foreground/10 px-1 text-[10px] tabular-nums">
+          <span className="ml-0.5 rounded-full bg-primary/10 px-1.5 text-[10px] font-semibold tabular-nums text-primary">
             {images.length}
           </span>
         )}

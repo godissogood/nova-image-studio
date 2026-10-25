@@ -2,6 +2,7 @@
 
 import {
   ArrowUp,
+  ChevronDown,
   CloudUpload,
   Info,
   Link,
@@ -28,6 +29,7 @@ export interface GifUploadedRef extends RefImageData {
 }
 
 export interface GifParametersPanelProps {
+  wideMode?: boolean;
   prompt: string;
   onPromptChange: (value: string) => void;
   model: GifModel;
@@ -65,7 +67,10 @@ function formatModelLabel(model: GifModel, modelOptions: { value: GifModel; labe
 export function GifParametersPanel(props: GifParametersPanelProps) {
   if (props.disabled) {
     return (
-      <div className="flex min-h-72 flex-col items-center justify-center gap-4 rounded-xl border border-border bg-muted/40 px-4 py-8 text-center">
+      <div className={cn(
+        'flex flex-col items-center justify-center gap-4 rounded-xl border border-border bg-muted/40 px-4 py-8 text-center',
+        props.wideMode ? 'min-h-0 flex-1' : 'min-h-72'
+      )}>
         <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Info className="h-5 w-5" />
         </div>
@@ -82,7 +87,10 @@ export function GifParametersPanel(props: GifParametersPanelProps) {
 
   if (props.modelOptions.length === 0) {
     return (
-      <div className="flex min-h-72 flex-col items-center justify-center gap-4 rounded-xl border border-border bg-muted/40 px-4 py-8 text-center">
+      <div className={cn(
+        'flex flex-col items-center justify-center gap-4 rounded-xl border border-border bg-muted/40 px-4 py-8 text-center',
+        props.wideMode ? 'min-h-0 flex-1' : 'min-h-72'
+      )}>
         <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Info className="h-5 w-5" />
         </div>
@@ -98,15 +106,19 @@ export function GifParametersPanel(props: GifParametersPanelProps) {
   }
 
   return (
-    <div className="flex flex-col rounded-xl border border-border bg-muted/50 shadow-md md:h-[calc(100vh-400px)]">
-      <div className="min-h-0 md:flex-1 md:overflow-y-auto">
-        <div className="p-4">
+    <div className={cn(
+      'flex flex-col rounded-xl border border-border bg-muted/50 shadow-md',
+      props.wideMode && 'min-h-0 flex-1 overflow-hidden'
+    )}>
+      <div className={cn('flex min-h-0 flex-col', props.wideMode && 'flex-1')}>
+        {/* 紧凑参考图上传区，对齐反推提示词 */}
+        <div className="shrink-0 p-4 pb-2">
           <div
             onDrop={props.onDrop}
             onDragOver={props.onDragOver}
             onDragLeave={props.onDragLeave}
             className={cn(
-              'relative overflow-hidden rounded-xl border-2 border-dashed px-6 py-8 text-center transition-all',
+              'relative overflow-hidden rounded-xl border-2 border-dashed px-4 py-5 text-center transition-all',
               props.maxedOut
                 ? 'cursor-not-allowed border-border bg-muted/40 text-muted-foreground'
                 : props.isDragOver
@@ -123,7 +135,7 @@ export function GifParametersPanel(props: GifParametersPanelProps) {
               className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
               style={{ fontSize: 0 }}
             />
-            <CloudUpload className={cn('mx-auto mb-1 h-6 w-6', props.isDragOver ? 'text-primary' : 'text-muted-foreground')} />
+            <CloudUpload className={cn('mx-auto mb-1 h-5 w-5', props.isDragOver ? 'text-primary' : 'text-muted-foreground')} />
             <p className="text-sm font-medium">
               {props.uploading
                 ? '读取中...'
@@ -138,7 +150,7 @@ export function GifParametersPanel(props: GifParametersPanelProps) {
         </div>
 
         {props.refFiles.length > 0 && (
-          <div className="px-4 pb-2">
+          <div className="shrink-0 px-4 pb-2">
             <AttachmentChips
               files={props.refFiles}
               onRemove={props.onRemoveRef}
@@ -149,32 +161,49 @@ export function GifParametersPanel(props: GifParametersPanelProps) {
           </div>
         )}
 
-        <Textarea
-          value={props.prompt}
-          onChange={event => props.onPromptChange(event.target.value)}
-          placeholder="描述动画主题 / 动作，例如：一只虎斑猫缓慢眨眼"
-          rows={3}
-          className="resize-none rounded-none border-0 bg-transparent placeholder:text-placeholder focus-visible:border-0 focus-visible:ring-0"
-        />
+        {/* 提示词输入：清晰边框，宽屏下吃掉剩余高度 */}
+        <div className={cn('px-4 pb-3', props.wideMode && 'flex min-h-0 flex-1 flex-col')}>
+          <div className={cn(
+            'overflow-hidden rounded-xl border border-border bg-background shadow-xs transition-colors focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/15',
+            props.wideMode && 'flex min-h-0 flex-1 flex-col'
+          )}>
+            <Textarea
+              value={props.prompt}
+              onChange={event => props.onPromptChange(event.target.value)}
+              placeholder="描述动画主题 / 动作，例如：一只虎斑猫缓慢眨眼"
+              rows={props.wideMode ? undefined : 5}
+              className={cn(
+                'resize-none rounded-none border-0 bg-transparent px-3 py-3 shadow-none placeholder:text-placeholder focus-visible:border-0 focus-visible:ring-0',
+                props.wideMode ? 'h-full min-h-0 flex-1 [field-sizing:fixed]' : 'min-h-28'
+              )}
+            />
+          </div>
+        </div>
 
         {props.uploadError && (
-          <div className="px-4 pb-3">
+          <div className="shrink-0 px-4 pb-3">
             <p className="text-sm text-destructive">{props.uploadError}</p>
           </div>
         )}
       </div>
 
-      <div className="flex-none border-t border-border/50 px-4 py-3">
+      <div className="mt-auto flex shrink-0 flex-col gap-2 border-t border-border/80 px-4 py-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <Popover open={props.modelPopoverOpen} onOpenChange={props.onModelPopoverOpenChange}>
             <PopoverTrigger
-              className={cn(buttonVariants({ variant: 'outline', size: 'xs' }), 'gap-1')}
+              className={cn(
+                buttonVariants({ variant: 'outline', size: 'xs' }),
+                'h-7 gap-1.5 border-primary/40 bg-primary/8 px-2 text-foreground shadow-xs hover:border-primary/60 hover:bg-primary/12'
+              )}
               title="模型"
             >
-              <Sparkles className="h-3 w-3" />
-              <span className="shrink-0 truncate text-[11px]">{formatModelLabel(props.model, props.modelOptions)}</span>
+              <span className="text-[11px] font-semibold text-primary">模型</span>
+              <span className="h-3 w-px bg-primary/30" />
+              <span className="max-w-40 truncate text-[12px] font-semibold">{formatModelLabel(props.model, props.modelOptions)}</span>
+              <ChevronDown className="h-3.5 w-3.5 text-primary" />
             </PopoverTrigger>
-            <PopoverContent className="w-48 p-1" align="start">
+            <PopoverContent className="w-64 p-1.5" align="start">
+              <p className="px-2.5 pb-1 pt-1 text-[11px] font-semibold tracking-wide text-primary">选择模型</p>
               {props.modelOptions.map(option => (
                 <button
                   key={option.value}
@@ -184,7 +213,7 @@ export function GifParametersPanel(props: GifParametersPanelProps) {
                     props.onModelPopoverOpenChange(false);
                   }}
                   className={cn(
-                    'w-full text-left px-2.5 py-1.5 rounded-md text-sm hover:bg-muted',
+                    'w-full rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-muted',
                     props.model === option.value && 'bg-muted font-medium',
                   )}
                 >
@@ -210,8 +239,8 @@ export function GifParametersPanel(props: GifParametersPanelProps) {
             onClick={() => props.onClosedLoopToggle(!props.closedLoop)}
             className={cn(
               buttonVariants({ variant: 'outline', size: 'xs' }),
-              'gap-1',
-              props.closedLoop ? 'border-primary text-primary' : '',
+              'h-7 gap-1',
+              props.closedLoop ? 'border-primary/40 bg-primary/8 text-primary' : '',
             )}
             title="首尾闭合：驱使模型生成闭环动画，第12帧无缝衔接回第1帧"
           >
@@ -252,8 +281,8 @@ export function GifParametersPanel(props: GifParametersPanelProps) {
             </Button>
           </div>
         </div>
-        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-          这里仅支持 image 系列的 4K 模型。banana 系列不支持当前动图网格所需的自定义分辨率，因此不提供选择。
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          网格 3×4=12 帧 · 分辨率 3264×2448 · 仅 image 系列 4K 模型
         </p>
       </div>
     </div>

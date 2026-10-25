@@ -1,8 +1,7 @@
 'use client';
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { Loader2, X, RefreshCw } from 'lucide-react';
+import { memo, useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Loader2, X, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Mode, StoredJob } from '@/lib/job-store';
 import { cn } from '@/lib/utils';
@@ -106,6 +105,11 @@ function JobsHeader({
   filter,
   onFilterChange,
   onClearAll,
+  showPager,
+  pageIndex,
+  pageTotal,
+  onPrev,
+  onNext,
 }: {
   title: string;
   jobsList: StoredJob[];
@@ -113,6 +117,11 @@ function JobsHeader({
   filter?: GenerationHistoryFilter;
   onFilterChange?: (filter: GenerationHistoryFilter) => void;
   onClearAll: () => void;
+  showPager?: boolean;
+  pageIndex: number;
+  pageTotal: number;
+  onPrev: () => void;
+  onNext: () => void;
 }) {
   if (!hasAnyJobs) return null;
 
@@ -122,9 +131,9 @@ function JobsHeader({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="space-y-1">
-        <h3 className="text-base font-medium text-foreground">{title}</h3>
-        <p className="text-xs text-muted-foreground">
+      <div className="space-y-1.5">
+        <h3 className="itoo-section-title">{title}</h3>
+        <p className="itoo-section-meta">
           共 {jobsList.length} 条 · 完成 {completed} · 处理中 {processing} · 排队 {queued}
         </p>
       </div>
@@ -148,6 +157,37 @@ function JobsHeader({
             ))}
           </div>
         )}
+        {showPager && pageTotal > 0 && (
+          <div className="flex items-center gap-1 rounded-full border border-border bg-background p-0.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="rounded-full"
+              disabled={pageIndex <= 0}
+              onClick={onPrev}
+              title="上一条任务"
+              aria-label="上一条任务"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <span className="min-w-14 px-1 text-center text-xs font-medium tabular-nums text-muted-foreground">
+              {pageIndex + 1} / {pageTotal}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="rounded-full"
+              disabled={pageIndex >= pageTotal - 1}
+              onClick={onNext}
+              title="下一条任务"
+              aria-label="下一条任务"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        )}
         <Button variant="outline" size="sm" onClick={onClearAll} disabled={jobsList.length === 0}>
           清空记录
         </Button>
@@ -156,104 +196,83 @@ function JobsHeader({
   );
 }
 
-function useColumnCount(
-  ref: React.RefObject<HTMLDivElement | null>,
-  wideMode: boolean,
-  ready: boolean,
-) {
-  const [columns, setColumns] = useState(() => (wideMode && ready ? 2 : 1));
-
-  useEffect(() => {
-    if (!wideMode || !ready) {
-      queueMicrotask(() => setColumns(1));
-      return;
-    }
-    const el = ref.current;
-    if (!el) return;
-
-    const compute = () => {
-      const width = el.clientWidth;
-      setColumns(width >= 1080 ? 3 : width >= 680 ? 2 : 1);
-    };
-
-    compute();
-    const observer = new ResizeObserver(compute);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref, wideMode, ready]);
-
-  return wideMode ? columns : 1;
-}
-
-function VirtualJobList({
+function PagedJobView({
   jobs,
   active,
   wideMode,
+  index,
+  onIndexChange,
   renderJobCard,
 }: {
   jobs: StoredJob[];
   active: boolean;
   wideMode: boolean;
+  index: number;
+  onIndexChange: (index: number) => void;
   renderJobCard: (job: StoredJob) => React.ReactNode;
 }) {
-  const parentRef = useRef<HTMLDivElement>(null);
-  const shouldRender = active && jobs.length > 0;
-  const columns = useColumnCount(parentRef, wideMode, shouldRender);
-  const gutter = 16;
+  if (!active || jobs.length === 0) return null;
 
-  const virtualizer = useVirtualizer({
-    count: active ? jobs.length : 0,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 120,
-    overscan: 5,
-    lanes: columns,
-  });
-
-  if (!shouldRender) return null;
+  const safeIndex = Math.min(Math.max(index, 0), jobs.length - 1);
+  const job = jobs[safeIndex];
 
   return (
     <div
-      ref={parentRef}
-      className={cn('relative virtual-scroll-container', wideMode && 'min-h-0 flex-1')}
-      style={{
-        height: wideMode ? undefined : (jobs.length > 3 ? '70vh' : 'auto'),
-        maxHeight: wideMode ? undefined : '70vh',
-        minHeight: jobs.length > 0 ? '200px' : '0',
-        overflow: 'auto',
-        overflowX: 'hidden',
-        paddingTop: '8px',
+      className={cn('min-h-0', wideMode ? 'flex flex-1 flex-col' : undefined)}
+      onKeyDown={event => {
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          onIndexChange(Math.max(0, safeIndex - 1));
+        }
+        if (event.key === 'ArrowRight') {
+          event.preventDefault();
+          onIndexChange(Math.min(jobs.length - 1, safeIndex + 1));
+        }
       }}
+      tabIndex={0}
+      aria-label="生图任务翻页"
     >
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          width: '100%',
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map(virtualRow => {
-          const lane = columns > 1 ? virtualRow.lane : 0;
-          return (
-            <div
-              key={jobs[virtualRow.index].id}
-              data-index={virtualRow.index}
-              ref={virtualizer.measureElement}
-              className="absolute top-0"
-              style={{
-                left: `${(100 / columns) * lane}%`,
-                width: `${100 / columns}%`,
-                paddingLeft: columns > 1 ? gutter / 2 : 0,
-                paddingRight: columns > 1 ? gutter / 2 : 0,
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-            >
-              <div className="mb-4">
-                {renderJobCard(jobs[virtualRow.index])}
-              </div>
-            </div>
-          );
-        })}
+      <div className={cn(
+        'min-h-0',
+        wideMode ? 'flex-1 overflow-y-auto overflow-x-hidden pr-1' : undefined
+      )}>
+        <div
+          key={job.id}
+          className="animate-in fade-in duration-200"
+        >
+          {renderJobCard(job)}
+        </div>
       </div>
+
+      {jobs.length > 1 && (
+        <div className="mt-3 flex items-center justify-center gap-2">
+          <Button
+            type="button"
+            variant="soft"
+            size="sm"
+            className="gap-1 rounded-full px-3"
+            disabled={safeIndex <= 0}
+            onClick={() => onIndexChange(safeIndex - 1)}
+          >
+            <ChevronLeft className="size-4" />
+            上一条
+          </Button>
+          <span className="min-w-14 text-center text-xs font-medium tabular-nums text-muted-foreground">
+            {safeIndex + 1} / {jobs.length}
+          </span>
+          <Button
+            type="button"
+            variant="soft"
+            size="sm"
+            className="gap-1 rounded-full px-3"
+            disabled={safeIndex >= jobs.length - 1}
+            onClick={() => onIndexChange(safeIndex + 1)}
+          >
+            下一条
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -270,6 +289,8 @@ interface HistoryJobListProps {
   loadedImages: Set<string>;
   checkingJobIds: Set<string>;
   cooldowns: Map<string, number>;
+  /** 左右翻页展示；默认关闭，恢复纵向列表 */
+  paged?: boolean;
   onRetry: (job: StoredJob) => void;
   onRetryDownload?: (job: StoredJob) => void | Promise<void>;
   onClear: (jobId: string) => void;
@@ -291,6 +312,7 @@ export function HistoryJobList({
   loadedImages,
   checkingJobIds,
   cooldowns,
+  paged = false,
   onRetry,
   onRetryDownload,
   onClear,
@@ -302,7 +324,7 @@ export function HistoryJobList({
   const hasActiveTimers = useMemo(() => active && jobs.some(job => isWaitingJob(job)), [active, jobs]);
   const now = useNow(hasActiveTimers);
   const clearScope: HistoryClearScope = historyFilter || (mode === 'image-to-image' ? 'image-to-image' : 'text-to-image');
-
+  const [pageIndex, setPageIndex] = useState(0);
   const renderJobCard = (job: StoredJob) => {
     const hasImage = job.status === 'completed' && (job.images || job.imageData) && loadedImages.has(job.id);
     if (isWaitingJob(job)) {
@@ -312,8 +334,6 @@ export function HistoryJobList({
       return <CompletedJobCard job={job} onClear={() => onClear(job.id)} onRetry={onRetry} onRetryDownload={onRetryDownload} />;
     }
     if (job.status === 'failed') {
-      // terminal=true → 后端明确判定不可恢复，不显示"查看进度"
-      // 其他情况（默认 / 网络错误 / 未分类）都允许"查看进度"，让用户兜底
       const allowCheckStatus = !job.terminal && !!job.serverTaskId;
       return (
         <div className="rounded-xl border border-destructive/20 bg-card p-4">
@@ -332,7 +352,7 @@ export function HistoryJobList({
                 </Button>
               )}
               <Button variant="ghost" size="icon-sm" onClick={() => onRetry(job)} title="重试">
-                <Loader2 className="w-4 h-4" />
+                <RefreshCw className="w-4 h-4" />
               </Button>
               <Button variant="ghost" size="icon-sm" onClick={() => onClear(job.id)} title="删除">
                 <X className="w-4 h-4" />
@@ -354,19 +374,37 @@ export function HistoryJobList({
         filter={historyFilter}
         onFilterChange={onHistoryFilterChange}
         onClearAll={() => onClearAll(clearScope)}
+        showPager={paged}
+        pageIndex={pageIndex}
+        pageTotal={jobs.length}
+        onPrev={() => setPageIndex(index => Math.max(0, index - 1))}
+        onNext={() => setPageIndex(index => Math.min(jobs.length - 1, index + 1))}
       />
       {active && jobs.length === 0 ? (
         <div className={cn(
-          'flex flex-col items-center justify-center text-center text-muted-foreground',
-          wideMode ? 'flex-1 py-16' : 'py-6'
+          'flex flex-col items-center justify-center text-center',
+          wideMode ? 'flex-1 py-16' : 'py-8'
         )}>
-          <p className="text-sm">暂无记录</p>
-          <p className="mt-1 text-xs opacity-70">
+          <p className="itoo-empty-title">暂无记录</p>
+          <p className="itoo-empty-desc mt-2">
             {emptyDescription || (mode === 'text-to-image' ? '提交一段文字描述来生成图片' : '上传图片并输入描述来转换')}
           </p>
         </div>
+      ) : paged ? (
+        <PagedJobView
+          jobs={jobs}
+          active={active}
+          wideMode={wideMode}
+          index={pageIndex}
+          onIndexChange={setPageIndex}
+          renderJobCard={renderJobCard}
+        />
       ) : (
-        <VirtualJobList jobs={jobs} active={active} wideMode={wideMode} renderJobCard={renderJobCard} />
+        <div className={cn('space-y-4', wideMode && 'min-h-0 flex-1 overflow-y-auto')}>
+          {jobs.map(job => (
+            <div key={job.id}>{renderJobCard(job)}</div>
+          ))}
+        </div>
       )}
     </section>
   );

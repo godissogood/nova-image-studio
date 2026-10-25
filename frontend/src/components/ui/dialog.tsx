@@ -8,9 +8,26 @@ import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 import { useBodyScrollLock } from "@/lib/scroll-lock"
 
-function Dialog({ modal = "trap-focus", ...props }: DialogPrimitive.Root.Props) {
+function Dialog({ modal = "trap-focus", open, defaultOpen = false, onOpenChange, ...props }: DialogPrimitive.Root.Props) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
+  const isOpen = open ?? uncontrolledOpen;
   const resolvedModal = modal === true ? "trap-focus" : modal;
-  return <DialogPrimitive.Root data-slot="dialog" modal={resolvedModal} {...props} />
+  const handleOpenChange: NonNullable<DialogPrimitive.Root.Props['onOpenChange']> = (nextOpen, eventDetails) => {
+    if (open === undefined) setUncontrolledOpen(nextOpen);
+    onOpenChange?.(nextOpen, eventDetails);
+  };
+
+  useBodyScrollLock(isOpen && modal !== false);
+
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      modal={resolvedModal}
+      open={isOpen}
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  );
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -51,8 +68,6 @@ function DialogContent({
   showCloseButton?: boolean
   overlayClassName?: string
 }) {
-  useBodyScrollLock();
-
   return (
     <DialogPortal>
       <DialogOverlay className={overlayClassName} />

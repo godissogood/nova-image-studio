@@ -17,6 +17,7 @@ import { deleteAgentSessionDatabase } from '@/lib/agent-context-store';
 import {
   createAgentSession,
   deleteAgentSession,
+  formatAgentSessionTime,
   listAgentSessions,
   renameAgentSession,
   type AgentSession,
@@ -132,11 +133,12 @@ export function SessionSwitcher({ activeSessionId, onSessionChange, mobileOpen, 
   const renderSessionItems = (isMobile: boolean = false) => (
     sessions.map(session => {
       const isActive = session.id === activeSessionId;
+      const timeLabel = formatAgentSessionTime(session.updatedAt);
       return (
         <div
           key={session.id}
           className={cn(
-            'group flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 transition-all text-sm',
+            'group flex items-start gap-1.5 rounded-xl px-2.5 py-2 transition-all text-sm',
             isActive
               ? 'bg-primary/10 text-primary font-medium border border-primary/20 shadow-xs dark:bg-primary/15'
               : 'border border-transparent text-muted-foreground hover:bg-muted/70 hover:text-foreground',
@@ -151,15 +153,27 @@ export function SessionSwitcher({ activeSessionId, onSessionChange, mobileOpen, 
               if (isMobile) setMobileOpenState(false);
             }}
             className={cn(
-              'min-w-0 flex-1 truncate text-left transition-colors',
+              'min-w-0 flex-1 text-left transition-colors',
               isActive ? 'text-primary font-medium' : 'text-foreground/80 hover:text-foreground',
             )}
           >
-            <span className="flex items-center gap-1.5 truncate">
+            <span className="flex items-start gap-1.5">
               {isActive && (
-                <span className="size-1.5 rounded-full bg-primary shrink-0 animate-pulse" />
+                <span className="mt-1.5 size-1.5 rounded-full bg-primary shrink-0 animate-pulse" />
               )}
-              <span className="truncate">{session.name}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate leading-5">{session.name}</span>
+                {timeLabel && (
+                  <span
+                    className={cn(
+                      'mt-0.5 block truncate text-[11px] font-normal leading-4 tracking-wide',
+                      isActive ? 'text-primary/65' : 'text-muted-foreground/75',
+                    )}
+                  >
+                    {timeLabel}
+                  </span>
+                )}
+              </span>
             </span>
           </button>
           <button
@@ -169,7 +183,7 @@ export function SessionSwitcher({ activeSessionId, onSessionChange, mobileOpen, 
             disabled={busy}
             onClick={() => openRenameDialog(session)}
             className={cn(
-              'shrink-0 rounded-md p-1 transition-colors disabled:opacity-40',
+              'mt-0.5 shrink-0 rounded-md p-1 transition-colors disabled:opacity-40',
               isActive
                 ? 'text-primary/70 hover:bg-primary/15 hover:text-primary'
                 : 'text-muted-foreground/60 hover:bg-background hover:text-foreground opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100',
@@ -188,7 +202,7 @@ export function SessionSwitcher({ activeSessionId, onSessionChange, mobileOpen, 
                 setDeleteTarget(session);
               }}
               className={cn(
-                'shrink-0 rounded-md p-1 transition-colors disabled:opacity-40',
+                'mt-0.5 shrink-0 rounded-md p-1 transition-colors disabled:opacity-40',
                 isActive
                   ? 'text-primary/70 hover:bg-destructive/10 hover:text-destructive'
                   : 'text-muted-foreground/60 hover:bg-background hover:text-destructive opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100',
@@ -207,13 +221,13 @@ export function SessionSwitcher({ activeSessionId, onSessionChange, mobileOpen, 
       {/* 桌面端正常展示侧边栏 */}
       <aside
         aria-label="Agent 会话"
-        className="hidden md:flex w-52 shrink-0 flex-col self-stretch rounded-2xl border border-border bg-card/60"
+        className="itoo-agent-panel itoo-agent-panel-session hidden md:flex self-stretch"
       >
-        <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="text-sm font-medium">会话</span>
-          <span className="text-xs text-muted-foreground">{sessions.length}</span>
+        <div className="itoo-agent-panel-header">
+          <span className="itoo-agent-panel-title">会话</span>
+          <span className="itoo-agent-panel-meta">{sessions.length}</span>
         </div>
-        <div className="border-b border-border p-2">
+        <div className="border-b border-border/70 p-2.5">
           <Button
             type="button"
             size="sm"
@@ -226,7 +240,7 @@ export function SessionSwitcher({ activeSessionId, onSessionChange, mobileOpen, 
             新建会话
           </Button>
         </div>
-        <div className="flex-1 space-y-1 overflow-y-auto p-2">
+        <div className="flex-1 space-y-1 overflow-y-auto p-2.5">
           {renderSessionItems(false)}
         </div>
       </aside>

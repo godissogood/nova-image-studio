@@ -29,6 +29,8 @@ export interface ProviderModelEntry {
   name: string;
   uses: ModelUse[];
   manual?: boolean;
+  customModelId?: string;
+  useCustomModelId?: boolean;
   imageConfigId?: string;
   textConfigId?: string;
   builtinPreset?: BuiltinImagePresetId;
@@ -238,6 +240,8 @@ export function normalizeProviderModelEntry(raw: Partial<ProviderModelEntry> | n
     name: String(raw?.name || modelId).trim() || modelId,
     uses: normalizeUses(raw?.uses),
     manual: raw?.manual === true,
+    customModelId: typeof raw?.customModelId === 'string' ? raw.customModelId : undefined,
+    useCustomModelId: raw?.useCustomModelId !== false,
     imageConfigId: String(raw?.imageConfigId || '').trim() || undefined,
     textConfigId: String(raw?.textConfigId || '').trim() || undefined,
     builtinPreset: raw?.builtinPreset,
@@ -395,6 +399,8 @@ export function migrateLegacyProviders(
       if (!current.uses.includes('image')) current.uses.push('image');
       current.imageConfigId = model.id;
       current.builtinPreset = model.builtinPreset;
+      current.customModelId = model.customModelId ?? model.modelId;
+      current.useCustomModelId = model.useCustomModelId !== false;
       continue;
     }
     provider.models.push({
@@ -402,6 +408,8 @@ export function migrateLegacyProviders(
       modelId: model.modelId,
       name: model.name || model.modelId,
       uses: ['image'],
+      customModelId: model.customModelId ?? model.modelId,
+      useCustomModelId: model.useCustomModelId !== false,
       imageConfigId: model.id,
       builtinPreset: model.builtinPreset,
       imageProtocol: model.protocol,
@@ -417,6 +425,8 @@ export function migrateLegacyProviders(
     if (current) {
       if (!current.uses.includes('text')) current.uses.push('text');
       current.textConfigId = model.id;
+      current.customModelId = model.customModelId ?? model.modelId;
+      current.useCustomModelId = model.useCustomModelId !== false;
       if (isTextProviderProtocol(model.protocol)) current.textProtocol = model.protocol;
       continue;
     }
@@ -425,6 +435,8 @@ export function migrateLegacyProviders(
       modelId: model.modelId,
       name: model.name || model.modelId,
       uses: ['text'],
+      customModelId: model.customModelId ?? model.modelId,
+      useCustomModelId: model.useCustomModelId !== false,
       textConfigId: model.id,
       textProtocol: isTextProviderProtocol(model.protocol) ? model.protocol : undefined,
       builtinTemplate: model.builtinTemplate,
@@ -476,10 +488,12 @@ export function reconcileModelProviders(
     if (use === 'image') {
       const image = model as ImageModelConfig;
       Object.assign(entry, { imageProtocol: image.protocol, builtinPreset: image.builtinPreset,
+        customModelId: image.customModelId ?? image.modelId, useCustomModelId: image.useCustomModelId !== false,
         maxRefImages: image.maxRefImages, maxOutputSize: image.maxOutputSize, supportsAdvancedParams: image.supportsAdvancedParams });
     } else {
       const text = model as TextModelConfig;
-      Object.assign(entry, { textProtocol: text.protocol, builtinTemplate: text.builtinTemplate, note: text.note });
+      Object.assign(entry, { textProtocol: text.protocol, builtinTemplate: text.builtinTemplate, note: text.note,
+        customModelId: text.customModelId ?? text.modelId, useCustomModelId: text.useCustomModelId !== false });
     }
   };
   imageModels.forEach(model => attach(model, 'image'));

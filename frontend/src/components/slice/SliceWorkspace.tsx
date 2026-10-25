@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   Code2,
   Copy,
   Download,
   FolderOpen,
   ImagePlus,
-  PanelLeftOpen,
   Pencil,
   Scissors,
   Trash2,
@@ -25,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { getAssetBlob, type ImageAsset } from '@/lib/asset-store';
 import { getBlob } from '@/lib/slice-db';
 import { describeSourceImageSizeError } from '@/lib/slice-geometry';
@@ -38,15 +40,27 @@ import {
   exportSlicePackage,
   importSliceWorkspacePackage,
 } from '@/lib/slice-export';
+import { cn } from '@/lib/utils';
 import type { SliceWorkspaceDraft } from '@/lib/slice-types';
 import { SliceEditor } from './SliceEditor';
 import { WebReplicaWorkspace } from './WebReplicaWorkspace';
 import { useSliceStore } from './stores/use-slice-store';
 
+type SortMode = 'updated' | 'created' | 'name';
+
+const SORT_OPTIONS: { value: SortMode; label: string }[] = [
+  { value: 'updated', label: '最近修改' },
+  { value: 'created', label: '创建时间' },
+  { value: 'name', label: '名称' },
+];
+
+/** 与无限画布列表对齐：宽屏 4×2=8/页；非宽屏 3 列、9/页。 */
+const WIDE_PAGE_SIZE = 8;
+const NARROW_PAGE_SIZE = 9;
+
 type SliceWorkspaceProps = {
   wideMode?: boolean;
   onConfigureApiKey: () => void;
-  onEnableWideMode: () => void;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 };
 
@@ -73,7 +87,7 @@ async function readImageDimensions(blob: Blob): Promise<{ width: number; height:
   }
 }
 
-export function SliceWorkspace({ wideMode, onConfigureApiKey, onEnableWideMode, showToast }: SliceWorkspaceProps) {
+export function SliceWorkspace({ wideMode, onConfigureApiKey, showToast }: SliceWorkspaceProps) {
   const hydrated = useSliceStore((s) => s.hydrated);
   const workspaces = useSliceStore((s) => s.workspaces);
   const activeWorkspaceId = useSliceStore((s) => s.activeWorkspaceId);
@@ -93,12 +107,28 @@ export function SliceWorkspace({ wideMode, onConfigureApiKey, onEnableWideMode, 
   // 创建中禁用素材项，避免重复提交（创建完成后会自动跳转编辑器）。
   const [busy, setBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>('updated');
+  const [pageIndex, setPageIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const packageInputRef = useRef<HTMLInputElement>(null);
   // 工作区内的子 tab：图片拆图在左，网页复刻在右（拆图是网页复刻的前置步骤）。
   const [activeSubTab, setActiveSubTab] = useState<'slice' | 'web-replica'>('slice');
   const [subTabBusy, setSubTabBusy] = useState(false);
   const previousWorkspaceId = useRef<string | null>(null);
+
+  const sortedWorkspaces = useMemo(() => {
+    const list = [...workspaces];
+    if (sortMode === 'name') list.sort((a, b) => (a.note || '').localeCompare(b.note || '', 'zh'));
+    else if (sortMode === 'created') list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    else list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return list;
+  }, [workspaces, sortMode]);
+
+  const pageSize = wideMode ? WIDE_PAGE_SIZE : NARROW_PAGE_SIZE;
+  const pageCount = Math.max(1, Math.ceil(sortedWorkspaces.length / pageSize));
+  const safePageIndex = Math.min(pageIndex, pageCount - 1);
+  const pageWorkspaces = sortedWorkspaces.slice(safePageIndex * pageSize, safePageIndex * pageSize + pageSize);
+  const showPager = sortedWorkspaces.length > pageSize;
 
   // 切换工作区时重置到「图片拆图」子 tab，保留原有的切图优先入口。
   useEffect(() => {
@@ -242,23 +272,6 @@ export function SliceWorkspace({ wideMode, onConfigureApiKey, onEnableWideMode, 
     }
   };
 
-  // 切图仅在宽屏模式下可用（与无限画布一致），以降低适配成本。
-  if (!wideMode) {
-    return (
-      <div className="grid place-items-center rounded-2xl border border-dashed border-border py-20">
-        <div className="flex max-w-sm flex-col items-center gap-3 px-6 text-center">
-          <Scissors className="size-10 text-muted-foreground" />
-          <h2 className="text-base font-semibold">UI设计模式需要宽屏模式</h2>
-          <p className="text-sm text-muted-foreground">请使用电脑，或切换到宽屏模式（窗口宽度需 ≥ 1280px）。</p>
-          <Button size="sm" onClick={onEnableWideMode}>
-            <PanelLeftOpen className="size-4" />
-            切换宽屏模式
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   if (activeWorkspaceId) {
     const visibleAssets = activeWorkspace?.assets.filter((asset) => !asset.hidden) ?? [];
     const hasIncompleteAiAsset = visibleAssets.some(
@@ -358,78 +371,146 @@ export function SliceWorkspace({ wideMode, onConfigureApiKey, onEnableWideMode, 
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">UI设计模式</h2>
-          <p className="text-xs text-muted-foreground">AI 拆解 UI 图为切图资产 · 手动校准 · 网页复刻</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void handleLocalFile(file);
-              event.target.value = '';
-            }}
-          />
-          <input
-            ref={packageInputRef}
-            type="file"
-            accept=".zip,application/zip,application/x-zip-compressed"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void handleImportPackage(file);
-              event.target.value = '';
-            }}
-          />
-          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={busy}>
-            <Upload className="size-4" />
-            本地图片
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => packageInputRef.current?.click()} disabled={busy}>
-            <Upload className="size-4" />
-            导入包
-          </Button>
-          <Button size="sm" onClick={() => setAssetPickerOpen(true)} disabled={busy}>
-            <ImagePlus className="size-4" />
-            从素材库导入
-          </Button>
-        </div>
-      </div>
+    <div className={cn('flex min-h-0 flex-col gap-3', wideMode && 'h-full flex-1')}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void handleLocalFile(file);
+          event.target.value = '';
+        }}
+      />
+      <input
+        ref={packageInputRef}
+        type="file"
+        accept=".zip,application/zip,application/x-zip-compressed"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void handleImportPackage(file);
+          event.target.value = '';
+        }}
+      />
 
-      {!mounted || !hydrated ? (
-        <div className="grid place-items-center rounded-2xl border border-dashed border-border py-16 text-sm text-muted-foreground">
-          加载中…
-        </div>
-      ) : workspaces.length === 0 ? (
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border py-16 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
-        >
-          <Scissors className="size-8" />
-          开始新工作
-          <span className="text-xs">上传一张 UI 图或从素材中选择开始切图</span>
-        </button>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {workspaces.map((workspace) => (
-            <WorkspaceCard
-              key={workspace.id}
-              workspace={workspace}
-              onOpen={() => void openWorkspace(workspace.id)}
-              onCopy={() => void copyWorkspace(workspace.id)}
-              onRename={(note) => void updateWorkspaceNote(workspace.id, note)}
-              onDelete={() => setDeleteId(workspace.id)}
-            />
-          ))}
+      {workspaces.length > 0 && (
+        <div className="flex shrink-0 items-center justify-start">
+          <Select
+            value={sortMode}
+            onValueChange={setSortMode}
+            options={SORT_OPTIONS}
+            size="sm"
+            className="w-auto min-w-[7.5rem] focus-visible:ring-1"
+            contentClassName="min-w-32"
+            ariaLabel="工作区排序"
+          />
         </div>
       )}
+
+      <div className={cn(wideMode ? 'min-h-0 flex-1' : 'w-full')}>
+        {!mounted || !hydrated ? (
+          <div className={cn('grid place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground', wideMode ? 'h-full' : 'py-16')}>
+            加载中…
+          </div>
+        ) : workspaces.length === 0 ? (
+          <div className={cn('grid place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground', wideMode ? 'h-full' : 'py-16')}>
+            <div className="flex flex-col items-center gap-2 leading-relaxed">
+              <Scissors className="size-8" />
+              还没有工作区，可在下方导入
+            </div>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              'grid gap-3',
+              wideMode ? 'h-full grid-cols-4 grid-rows-2' : 'grid-cols-3'
+            )}
+          >
+            {pageWorkspaces.map((workspace) => (
+              <WorkspaceCard
+                key={workspace.id}
+                workspace={workspace}
+                wideMode={Boolean(wideMode)}
+                onOpen={() => void openWorkspace(workspace.id)}
+                onCopy={() => void copyWorkspace(workspace.id)}
+                onRename={(note) => void updateWorkspaceNote(workspace.id, note)}
+                onDelete={() => setDeleteId(workspace.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className={cn('flex shrink-0 items-center justify-center py-1', wideMode && 'mt-auto')}>
+        <div className={cn('flex w-full max-w-4xl items-center', showPager ? 'justify-between gap-8' : 'justify-center gap-4')}>
+          {showPager && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="size-12 shrink-0 rounded-full border-primary/30 bg-background text-primary shadow-md hover:border-primary hover:bg-primary/5 disabled:opacity-35"
+              disabled={safePageIndex <= 0}
+              aria-label="上一页工作区"
+              onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
+            >
+              <ChevronLeft className="size-6" />
+            </Button>
+          )}
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-11 min-w-32 rounded-full border-primary/30 bg-background px-5 text-sm shadow-sm hover:border-primary hover:bg-primary/5"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+            >
+              <Upload className="size-4" />
+              本地图片
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-11 min-w-28 rounded-full border-primary/30 bg-background px-5 text-sm shadow-sm hover:border-primary hover:bg-primary/5"
+              onClick={() => packageInputRef.current?.click()}
+              disabled={busy}
+            >
+              <Upload className="size-4" />
+              导入包
+            </Button>
+            {showPager && (
+              <span className="min-w-20 px-1 text-center text-sm tabular-nums text-muted-foreground">
+                {safePageIndex + 1}/{pageCount} · {sortedWorkspaces.length}个
+              </span>
+            )}
+            <Button
+              size="lg"
+              className="h-11 min-w-40 rounded-full px-6 text-sm shadow-md"
+              onClick={() => setAssetPickerOpen(true)}
+              disabled={busy}
+            >
+              <ImagePlus className="size-4" />
+              从素材库导入
+            </Button>
+          </div>
+
+          {showPager && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="size-12 shrink-0 rounded-full border-primary/30 bg-background text-primary shadow-md hover:border-primary hover:bg-primary/5 disabled:opacity-35"
+              disabled={safePageIndex >= pageCount - 1}
+              aria-label="下一页工作区"
+              onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))}
+            >
+              <ChevronRight className="size-6" />
+            </Button>
+          )}
+        </div>
+      </div>
 
       {/* 复用全站素材库选择器，保持搜索、标签筛选和虚拟列表体验一致。 */}
       <AgentAssetPickerDialog
@@ -469,15 +550,17 @@ export function SliceWorkspace({ wideMode, onConfigureApiKey, onEnableWideMode, 
   );
 }
 
-/** 工作区卡片：缩略图、备注、切图数量、操作按钮。 */
+/** 工作区卡片：缩略图、备注、切图数量、操作按钮（布局对齐无限画布卡片）。 */
 function WorkspaceCard({
   workspace,
+  wideMode,
   onOpen,
   onCopy,
   onRename,
   onDelete,
 }: {
   workspace: SliceWorkspaceDraft;
+  wideMode?: boolean;
   onOpen: () => void;
   onCopy: () => void;
   onRename: (note: string) => void;
@@ -521,11 +604,16 @@ function WorkspaceCard({
   };
 
   return (
-    <div className="group flex flex-col gap-2 rounded-2xl border border-border bg-card p-3 shadow-sm transition-colors hover:border-primary/40">
+    <div
+      className={cn(
+        'group flex flex-col overflow-hidden rounded-2xl border border-border bg-card p-2.5 shadow-sm transition-colors hover:border-primary/40',
+        wideMode && 'h-full min-h-0'
+      )}
+    >
       <button
         type="button"
         aria-label="打开 UI 设计工作区"
-        className="relative block aspect-video w-full overflow-hidden rounded-lg bg-background"
+        className="relative mb-2 block w-full shrink-0 overflow-hidden rounded-xl border border-border bg-muted/40 aspect-[3/2]"
         onClick={onOpen}
       >
         {thumbUrl ? (
@@ -548,57 +636,59 @@ function WorkspaceCard({
         )}
       </button>
 
-      {editing ? (
-        <Input
-          autoFocus
-          value={noteInput}
-          onChange={(event) => setNoteInput(event.target.value)}
-          onBlur={commitEdit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              commitEdit();
-            } else if (event.key === 'Escape') {
-              event.preventDefault();
-              cancelEdit();
-            }
-          }}
-        />
-      ) : (
-        <button
-          type="button"
-          title="双击编辑备注"
-          className="w-full rounded-md text-left transition-colors hover:text-primary"
-          onDoubleClick={startEdit}
-        >
-          <span className="line-clamp-1 font-medium">{workspace.note?.trim() || '未命名工作'}</span>
-        </button>
-      )}
+      <div className={cn('flex shrink-0 flex-col gap-1', wideMode && 'mt-auto')}>
+        {editing ? (
+          <Input
+            autoFocus
+            value={noteInput}
+            onChange={(event) => setNoteInput(event.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commitEdit();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                cancelEdit();
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            title="双击编辑备注"
+            className="w-full rounded-md text-left transition-colors hover:text-primary"
+            onDoubleClick={startEdit}
+          >
+            <span className="line-clamp-1 text-sm font-medium leading-5">{workspace.note?.trim() || '未命名工作'}</span>
+          </button>
+        )}
 
-      <p className="text-xs text-muted-foreground">
-        {workspace.assets.length} 个切图 ·{' '}
-        {new Date(workspace.updatedAt).toLocaleString('zh-CN', {
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-        })}
-      </p>
+        <p className="line-clamp-1 text-[11px] leading-4 text-muted-foreground">
+          {workspace.assets.length} 个切图 ·{' '}
+          {new Date(workspace.updatedAt).toLocaleString('zh-CN', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </p>
 
-      <div className="flex items-center gap-1">
-        <Button variant="secondary" size="sm" className="flex-1" onClick={onOpen}>
-          <FolderOpen className="size-4" />
-          打开
-        </Button>
-        <Button variant="ghost" size="icon-sm" aria-label="编辑备注" onClick={startEdit}>
-          <Pencil className="size-4" />
-        </Button>
-        <Button variant="ghost" size="icon-sm" aria-label="创建副本" onClick={onCopy}>
-          <Copy className="size-4" />
-        </Button>
-        <Button variant="ghost" size="icon-sm" aria-label="删除" onClick={onDelete}>
-          <Trash2 className="size-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="secondary" size="sm" className="h-7 flex-1 text-xs" onClick={onOpen}>
+            <FolderOpen className="size-3.5" />
+            打开
+          </Button>
+          <Button variant="ghost" size="icon-sm" className="size-7" aria-label="编辑备注" onClick={startEdit}>
+            <Pencil className="size-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon-sm" className="size-7" aria-label="创建副本" onClick={onCopy}>
+            <Copy className="size-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon-sm" className="size-7" aria-label="删除" onClick={onDelete}>
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
       </div>
     </div>
   );

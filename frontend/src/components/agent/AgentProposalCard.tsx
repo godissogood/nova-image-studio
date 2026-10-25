@@ -311,7 +311,7 @@ export function AgentProposalCard({
   };
 
   return (
-    <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 shadow-sm">
+    <div className="itoo-agent-msg-surface rounded-2xl border border-primary/30 p-4 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className={cn(

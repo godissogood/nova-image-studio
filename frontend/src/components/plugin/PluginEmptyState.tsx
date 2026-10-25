@@ -26,14 +26,9 @@ export function PluginEmptyState({ registry }: { registry: PluginRegistrySnapsho
         </div>
 
         <div className="space-y-2 rounded-xl border border-border/60 bg-muted/30 p-3 text-left">
-          <p className="text-[11px] font-medium text-foreground">安装位置</p>
-          <code className="block break-all rounded-lg bg-background px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
-            {registry.pluginsDir || 'backend/plugins/<插件 ID>/'}
-          </code>
+          <p className="text-[11px] font-medium text-foreground">插件状态</p>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            每个插件是一个目录，至少包含 <code className="font-mono">manifest.json</code>、
-            <code className="font-mono">ui.schema.json</code>、<code className="font-mono">provider.json</code> 三个文件。
-            开发方式见仓库中的 <code className="font-mono">docs/plugins/</code>。
+            视频能力由服务器端部署的插件提供。插件加载后会显示在这里。
           </p>
         </div>
 

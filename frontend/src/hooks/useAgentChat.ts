@@ -31,6 +31,7 @@ import {
   type AgentImageRecord,
   type AgentProposal,
 } from '@/lib/agent-chat-config';
+import { touchAgentSession } from '@/lib/agent-sessions';
 import {
   loadAgentSession,
   putMessage,
@@ -412,6 +413,7 @@ export function useAgentChat(sessionId = 'default') {
     messagesRef.current = upsert(messagesRef.current);
     setMessages(upsert);
     await putMessage(message, sessionIdRef.current, sessionGeneration);
+    touchAgentSession(sessionIdRef.current, message.createdAt || Date.now());
     return isSessionCurrent(sessionGeneration);
   }, [isSessionCurrent]);
 

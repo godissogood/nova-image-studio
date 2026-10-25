@@ -17,6 +17,7 @@ import {
 } from '@/lib/prompt-gallery-data';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { seededShuffle } from '@/lib/seeded-shuffle';
+import { cn } from '@/lib/utils';
 
 const PROMPT_GALLERY_STEP = 20;
 const PROMPT_GALLERY_WIDE_STEP = 30;
@@ -170,23 +171,28 @@ const PromptGallery = memo(function PromptGallery({ wideMode = false }: { wideMo
   return (
     <>
       <div className="space-y-6">
-        <div className="space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <div className="space-y-3.5">
+          <div className="relative w-full max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="搜索提示词、标题或作者..."
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              className="pl-9"
+              className="h-10 pl-9"
             />
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2.5">
             {categories.map((category) => (
               <Badge
                 key={category}
                 variant={selectedCategory === category ? 'default' : 'secondary'}
-                className="cursor-pointer px-3 py-1 transition-colors hover:bg-primary/80"
+                className={cn(
+                  'cursor-pointer rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
+                  selectedCategory === category
+                    ? 'shadow-sm hover:bg-primary/90'
+                    : 'hover:bg-primary/15 hover:text-primary'
+                )}
                 onClick={() => setSelectedCategory(category)}
               >
                 {category}
@@ -196,7 +202,7 @@ const PromptGallery = memo(function PromptGallery({ wideMode = false }: { wideMo
         </div>
 
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">
+          <span className="text-[15px] font-semibold tracking-tight text-foreground">
             找到 {filteredPrompts.length} 个提示词{displayedPrompts.length < filteredPrompts.length ? ` · 显示 ${displayedPrompts.length} 个` : ''}
           </span>
           <Popover>

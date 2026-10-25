@@ -483,12 +483,17 @@ function PluginForm({
             );
           }
           const isPrompt = promptField?.key === field.key;
+          const combination = isPrompt
+            ? `${buildParamSummary(plugin, facets, fields).map(chip => chip.value).join(' · ')}${model ? ` (${model})` : ''}`
+            : undefined;
           return (
             <TextFieldControl
               key={field.key}
               field={field}
               value={String(fields[field.key] ?? '')}
               stretch={isPrompt && wideMode}
+              emphasis={isPrompt}
+              summary={combination}
               onChange={value => handleFieldChange(field.key, value)}
             />
           );
@@ -529,10 +534,6 @@ function PluginForm({
           </Button>
         </div>
 
-        <p className="text-[11px] text-muted-foreground/80">
-          当前组合：{buildParamSummary(plugin, facets, fields).map(chip => chip.value).join(' · ')}
-          {model && <span className="ml-1 font-mono opacity-70">({model})</span>}
-        </p>
       </div>
     </div>
   );
@@ -569,26 +570,46 @@ function TextFieldControl({
   field,
   value,
   stretch,
+  emphasis = false,
+  summary,
   onChange,
 }: {
   field: PluginField;
   value: string;
   stretch: boolean;
+  emphasis?: boolean;
+  summary?: string;
   onChange: (value: string) => void;
 }) {
   const maxLength = field.maxLength || 0;
 
   return (
     <div className={cn('space-y-2', stretch && 'xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:space-y-0 xl:gap-2')}>
-      <div className="flex items-center justify-between">
-        <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-          <SchemaIcon name={field.icon} className="size-3.5 text-primary" />
+      {summary && (
+        <p className="rounded-lg border border-border/70 bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground">
+          <span className="mr-1 text-muted-foreground">当前组合：</span>
+          {summary}
+        </p>
+      )}
+      <div className="flex items-center justify-between gap-3">
+        <label className={cn(
+          'flex items-center gap-1.5 text-foreground',
+          emphasis ? 'text-sm font-bold tracking-tight' : 'text-xs font-semibold',
+        )}>
+          <SchemaIcon name={field.icon} className={emphasis ? 'size-4 text-primary' : 'size-3.5 text-primary'} />
           {field.label || field.key}
-          {field.required && <span className="text-destructive">*</span>}
+          {field.required && (
+            <span className={emphasis ? 'text-base leading-none font-bold text-destructive' : 'text-destructive'}>*</span>
+          )}
         </label>
         <div className="flex items-center gap-2">
           {maxLength > 0 && (
-            <span className="font-mono text-[11px] text-muted-foreground">
+            <span className={cn(
+              'font-mono',
+              emphasis
+                ? 'rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary'
+                : 'text-[11px] text-muted-foreground',
+            )}>
               {value.length}/{maxLength}
             </span>
           )}

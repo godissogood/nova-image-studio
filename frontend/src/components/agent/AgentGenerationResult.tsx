@@ -107,7 +107,7 @@ function getProgressLabel(phase: AgentPhase, hasTaskId: boolean): string {
 
 function GenerationSectionCard({ section, copiedText, onCopy }: GenerationSectionCardProps) {
   return (
-    <div className="rounded-xl border border-border/60 bg-card/80 p-3 transition-colors hover:bg-card">
+    <div className="itoo-agent-msg-surface rounded-xl border border-border/60 p-3 transition-colors">
       <div className="mb-2 flex items-center justify-between">
         <div className={cn('flex items-center gap-2 text-xs font-medium', section.color)}>
           {section.icon}
@@ -158,7 +158,7 @@ export function AgentGenerationResult({ text, reasoning }: AgentGenerationResult
             思考过程
             <span className="text-[10px] opacity-60 group-open:rotate-90 transition-transform">▶</span>
           </summary>
-          <div className="mt-2 rounded-lg bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+          <div className="itoo-agent-msg-surface-muted mt-2 rounded-lg p-3 text-xs leading-relaxed text-muted-foreground">
             <div dangerouslySetInnerHTML={{ __html: renderReasoning(reasoning) }} />
           </div>
         </details>
@@ -230,7 +230,7 @@ export function AgentGenerationProgress({
             思考过程
             <span className="text-[10px] opacity-60 transition-transform group-open:rotate-90">▶</span>
           </summary>
-          <div className="mt-2 rounded-lg bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+          <div className="itoo-agent-msg-surface-muted mt-2 rounded-lg p-3 text-xs leading-relaxed text-muted-foreground">
             <div dangerouslySetInnerHTML={{ __html: renderReasoning(reasoning) }} />
           </div>
         </details>
@@ -245,7 +245,7 @@ export function AgentGenerationProgress({
         />
       ))}
 
-      <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+      <div className="itoo-agent-msg-surface-muted rounded-xl border border-border/60 px-3 py-2 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-2">
           {phase === 'retrieval-failed'
             ? <ImageIcon className="h-3.5 w-3.5 text-amber-500" />
@@ -256,7 +256,7 @@ export function AgentGenerationProgress({
             {elapsedSeconds}s
           </span>}
           {taskId && (
-            <span className="min-w-0 max-w-[14rem] truncate rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px] sm:max-w-[18rem]">
+            <span className="itoo-agent-msg-surface min-w-0 max-w-[14rem] truncate rounded border border-border/50 px-1.5 py-0.5 font-mono text-[10px] sm:max-w-[18rem]">
               {taskId}
             </span>
           )}

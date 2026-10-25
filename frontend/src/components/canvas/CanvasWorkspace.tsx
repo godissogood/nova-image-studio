@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, FolderOpen, Frame, Layers, PanelLeftOpen, Plus, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FolderOpen, Layers, Plus, Trash2, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,7 +16,6 @@ import { exportCanvasProjects, importCanvasProjectsFromZip } from "./utils/canva
 type CanvasWorkspaceProps = {
   wideMode?: boolean;
   onConfigureApiKey: () => void;
-  onEnableWideMode: () => void;
   showToast: (message: string, type: "success" | "error" | "info") => void;
   showPromptGallery?: boolean;
 };
@@ -29,7 +28,11 @@ const SORT_OPTIONS: { value: SortMode; label: string }[] = [
   { value: "name", label: "名称" },
 ];
 
-export function CanvasWorkspace({ wideMode, onConfigureApiKey, onEnableWideMode, showToast, showPromptGallery }: CanvasWorkspaceProps) {
+/** 宽屏：4 列 × 2 行 = 8 / 页；非宽屏：3 列 × 3 行 = 9 / 页。超出翻页。 */
+const WIDE_PAGE_SIZE = 8;
+const NARROW_PAGE_SIZE = 9;
+
+export function CanvasWorkspace({ wideMode, onConfigureApiKey, showToast, showPromptGallery }: CanvasWorkspaceProps) {
   const hydrated = useCanvasStore((state) => state.hydrated);
   const projects = useCanvasStore((state) => state.projects);
   const createProject = useCanvasStore((state) => state.createProject);
@@ -42,6 +45,7 @@ export function CanvasWorkspace({ wideMode, onConfigureApiKey, onEnableWideMode,
   const [editingTitle, setEditingTitle] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("updated");
+  const [pageIndex, setPageIndex] = useState(0);
   const [mounted, setMounted] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,26 +62,15 @@ export function CanvasWorkspace({ wideMode, onConfigureApiKey, onEnableWideMode,
     return list;
   }, [projects, sortMode]);
 
-  // 画布仅在宽屏模式下可用（按宽度模式判断，非检测设备），以降低适配成本。
-  if (!wideMode) {
-    return (
-      <div className="grid place-items-center rounded-2xl border border-dashed border-border py-20">
-        <div className="flex max-w-sm flex-col items-center gap-3 px-6 text-center">
-          <Frame className="size-10 text-muted-foreground" />
-          <h2 className="text-base font-semibold">无限画布需要宽屏模式</h2>
-          <p className="text-sm text-muted-foreground">请使用电脑，或切换到宽屏模式（窗口宽度需 ≥ 1280px）。</p>
-          <Button size="sm" onClick={onEnableWideMode}>
-            <PanelLeftOpen className="size-4" />
-            切换宽屏模式
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  const pageSize = wideMode ? WIDE_PAGE_SIZE : NARROW_PAGE_SIZE;
+  const pageCount = Math.max(1, Math.ceil(sortedProjects.length / pageSize));
+  const safePageIndex = Math.min(pageIndex, pageCount - 1);
+  const pageProjects = sortedProjects.slice(safePageIndex * pageSize, safePageIndex * pageSize + pageSize);
+  const showPager = sortedProjects.length > pageSize;
 
   if (activeProjectId) {
     return (
-      <div className="relative h-full min-h-[70vh] w-full overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="relative h-[min(70dvh,52rem)] min-h-96 w-full overflow-hidden rounded-2xl border border-border bg-card">
         <CanvasEditor projectId={activeProjectId} onBack={() => setActiveProjectId(null)} onRequireApiKey={onConfigureApiKey} showToast={showToast} showPromptGallery={showPromptGallery} />
       </div>
     );
@@ -94,82 +87,158 @@ export function CanvasWorkspace({ wideMode, onConfigureApiKey, onEnableWideMode,
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">无限画布</h2>
-          <p className="text-xs text-muted-foreground">节点式画布生图 · 连线引用 · 生成走任务队列</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {projects.length > 0 && (
-            <Select<SortMode> value={sortMode} onValueChange={setSortMode} options={SORT_OPTIONS} size="sm" contentClassName="min-w-32" />
-          )}
-          <input ref={importInputRef} type="file" accept=".zip" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleImport(file); event.target.value = ""; }} />
-          <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()}>
-            <Upload className="size-4" />
-            导入
-          </Button>
-          <Button size="sm" onClick={() => setActiveProjectId(createProject())}>
-            <Plus className="size-4" />
-            新建画布
-          </Button>
-        </div>
-      </div>
-
-      {!mounted || !hydrated ? (
-        <div className="grid place-items-center rounded-2xl border border-dashed border-border py-16 text-sm text-muted-foreground">加载中…</div>
-      ) : projects.length === 0 ? (
-        <button
-          type="button"
-          onClick={() => setActiveProjectId(createProject())}
-          className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border py-16 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
-        >
-          <Layers className="size-8" />
-          还没有画布，点击新建第一个
-        </button>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {sortedProjects.map((project) => (
-            <div key={project.id} className={cn("group flex flex-col gap-2 rounded-2xl border border-border bg-card p-3 shadow-sm transition-colors hover:border-primary/40")}>
-              <button type="button" className="block w-full" aria-label="打开画布" onClick={() => setActiveProjectId(project.id)}>
-                <CanvasThumbnail nodes={project.nodes} />
-              </button>
-
-              {editingId === project.id ? (
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    renameProject(project.id, editingTitle);
-                    setEditingId(null);
-                  }}
-                >
-                  <Input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} onBlur={() => { renameProject(project.id, editingTitle); setEditingId(null); }} />
-                </form>
-              ) : (
-                <button type="button" className="w-full rounded-md text-left transition-colors hover:text-primary" title="点击重命名" onClick={() => { setEditingId(project.id); setEditingTitle(project.title); }}>
-                  <span className="line-clamp-1 font-medium">{project.title}</span>
-                </button>
-              )}
-
-              <p className="text-xs text-muted-foreground">
-                {project.nodes.length} 个节点 · {new Date(project.updatedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
-              </p>
-              <div className="flex items-center gap-1">
-                <Button variant="secondary" size="sm" className="flex-1" onClick={() => setActiveProjectId(project.id)}>
-                  <FolderOpen className="size-4" />
-                  打开
-                </Button>
-                <Button variant="ghost" size="icon-sm" aria-label="导出" onClick={() => void exportCanvasProjects([project], project.title || "无限画布")}>
-                  <Download className="size-4" />
-                </Button>
-                <Button variant="ghost" size="icon-sm" aria-label="删除" onClick={() => setDeleteId(project.id)}>
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
+    <div className={cn("flex min-h-0 flex-col gap-3", wideMode && "h-full flex-1")}>
+      {projects.length > 0 && (
+        <div className="flex shrink-0 items-center justify-start">
+          <Select
+            value={sortMode}
+            onValueChange={setSortMode}
+            options={SORT_OPTIONS}
+            size="sm"
+            className="w-auto min-w-[7.5rem] focus-visible:ring-1"
+            contentClassName="min-w-32"
+            ariaLabel="画布排序"
+          />
         </div>
       )}
+
+      <div className={cn(wideMode ? "min-h-0 flex-1" : "w-full")}>
+        {!mounted || !hydrated ? (
+          <div className={cn("grid place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground", wideMode ? "h-full" : "py-16")}>加载中…</div>
+        ) : projects.length === 0 ? (
+          <div className={cn("grid place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground", wideMode ? "h-full" : "py-16")}>
+            <div className="flex flex-col items-center gap-2 leading-relaxed">
+              <Layers className="size-8" />
+              还没有画布，可在下方新建
+            </div>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              "grid gap-3",
+              // 宽屏：4×2=8/页；非宽屏：一行 3 个，满 9 个一页，第 10 个起翻页
+              wideMode ? "h-full grid-cols-4 grid-rows-2" : "grid-cols-3"
+            )}
+          >
+            {pageProjects.map((project) => (
+              <div
+                key={project.id}
+                className={cn(
+                  "group flex flex-col overflow-hidden rounded-2xl border border-border bg-card p-2.5 shadow-sm transition-colors hover:border-primary/40",
+                  wideMode && "h-full min-h-0"
+                )}
+              >
+                <button
+                  type="button"
+                  className="mb-2 block w-full shrink-0 overflow-hidden"
+                  aria-label="打开画布"
+                  onClick={() => setActiveProjectId(project.id)}
+                >
+                  <CanvasThumbnail nodes={project.nodes} className="aspect-[3/2]" />
+                </button>
+
+                <div className={cn("flex shrink-0 flex-col gap-1", wideMode && "mt-auto")}>
+                  {editingId === project.id ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        renameProject(project.id, editingTitle);
+                        setEditingId(null);
+                      }}
+                    >
+                      <Input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} onBlur={() => { renameProject(project.id, editingTitle); setEditingId(null); }} />
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      className="w-full rounded-md text-left transition-colors hover:text-primary"
+                      title="点击重命名"
+                      onClick={() => { setEditingId(project.id); setEditingTitle(project.title); }}
+                    >
+                      <span className="line-clamp-1 text-sm font-medium leading-5">{project.title}</span>
+                    </button>
+                  )}
+
+                  <p className="line-clamp-1 text-[11px] leading-4 text-muted-foreground">
+                    {project.nodes.length} 个节点 · {new Date(project.updatedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+
+                  <div className="flex items-center gap-1">
+                    <Button variant="secondary" size="sm" className="h-7 flex-1 text-xs" onClick={() => setActiveProjectId(project.id)}>
+                      <FolderOpen className="size-3.5" />
+                      打开
+                    </Button>
+                    <Button variant="ghost" size="icon-sm" className="size-7" aria-label="导出" onClick={() => void exportCanvasProjects([project], project.title || "无限画布")}>
+                      <Download className="size-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon-sm" className="size-7" aria-label="删除" onClick={() => setDeleteId(project.id)}>
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className={cn("flex shrink-0 items-center justify-center py-1", wideMode && "mt-auto")}>
+        <input ref={importInputRef} type="file" accept=".zip" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleImport(file); event.target.value = ""; }} />
+        <div className={cn("flex w-full max-w-3xl items-center", showPager ? "justify-between gap-8" : "justify-center gap-4")}>
+          {showPager && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="size-12 shrink-0 rounded-full border-primary/30 bg-background text-primary shadow-md hover:border-primary hover:bg-primary/5 disabled:opacity-35"
+              disabled={safePageIndex <= 0}
+              aria-label="上一页画布"
+              onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
+            >
+              <ChevronLeft className="size-6" />
+            </Button>
+          )}
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-11 min-w-32 rounded-full border-primary/30 bg-background px-5 text-sm shadow-sm hover:border-primary hover:bg-primary/5"
+              onClick={() => importInputRef.current?.click()}
+            >
+              <Upload className="size-4" />
+              导入
+            </Button>
+            {showPager && (
+              <span className="min-w-20 px-1 text-center text-sm tabular-nums text-muted-foreground">
+                {safePageIndex + 1}/{pageCount} · {sortedProjects.length}个
+              </span>
+            )}
+            <Button
+              size="lg"
+              className="h-11 min-w-36 rounded-full px-6 text-sm shadow-md"
+              onClick={() => setActiveProjectId(createProject())}
+            >
+              <Plus className="size-4" />
+              新建画布
+            </Button>
+          </div>
+
+          {showPager && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="size-12 shrink-0 rounded-full border-primary/30 bg-background text-primary shadow-md hover:border-primary hover:bg-primary/5 disabled:opacity-35"
+              disabled={safePageIndex >= pageCount - 1}
+              aria-label="下一页画布"
+              onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))}
+            >
+              <ChevronRight className="size-6" />
+            </Button>
+          )}
+        </div>
+      </div>
 
       <Dialog open={Boolean(deleteId)} onOpenChange={(open) => !open && setDeleteId(null)}>
         <DialogContent className="sm:max-w-sm">

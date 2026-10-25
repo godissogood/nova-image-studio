@@ -11,7 +11,7 @@
   "outputs": ["video"],
   "credential": {
     "source": "client",
-    "label": "Grok-Heavy API Key",
+    "label": "API Key",
     "defaultBaseUrl": "https://api.itoo.me",
     "helpUrl": "https://api.itoo.me"
   },
